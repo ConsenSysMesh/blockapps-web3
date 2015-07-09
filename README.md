@@ -38,7 +38,7 @@ Then use web3 like normal!
 
 ### Implemented Methods
 
-The following list the currently implemented methods. Some methods have restrictions: For instance, any method that takes a block number or "latest", "earliest" or "pending" will default to "latest" regardless of what's passed to web3. Some of these restrictions are because they haven't been implemented; other restrictions are due to functionality not yet implemented by BlockApps.
+The following list the currently implemented methods. Some methods have restrictions: For instance, any method that takes a block number of "latest", "earliest" or "pending" will default to "latest" regardless of what's passed to web3. Some of these restrictions are because they haven't been implemented; other restrictions are due to functionality not yet implemented by BlockApps.
 
 * `eth_coinbase`
 * `eth_accounts`
