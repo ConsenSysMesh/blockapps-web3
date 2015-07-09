@@ -11,8 +11,8 @@ Node:
 First, `npm install web3` and `npm install blockapps-web3`. **TODO:** Add this to npm. Note: the last command doesn't yet work. Then, in your project:
 
 ```
-var web3 = require "web3"
-var BlockAppsWeb3Provider = require "blockapps-web3"
+var web3 = require("web3");
+var BlockAppsWeb3Provider = require("blockapps-web3");
 ```
 
 Browser:
