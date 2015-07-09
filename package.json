@@ -1,0 +1,26 @@
+{
+  "name": "blockapps-web3",
+  "version": "0.0.1",
+  "description": "A Web3 Provider for the BlockApps backend",
+  "author": "Tim Coulter",
+  "main": "build/blockapps-web3.js",
+  "private": false,
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/consensys/blockapps-web3.git"
+  },
+  "dependencies": {
+    "web3": "*",
+    "xmlhttprequest": "*"
+  },
+  "devDependencies": {
+    "grunt": "*",
+    "grunt-contrib-clean": "*",
+    "grunt-contrib-coffee": "*",
+    "grunt-contrib-concat": "*",
+    "grunt-contrib-uglify": "*",
+    "grunt-contrib-watch": "*"
+  },
+  "license": "MIT License. Copyright Consensys LLC, and authors. All rights reserved."
+}

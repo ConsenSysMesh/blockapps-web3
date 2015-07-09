@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+  <!--script type="text/javascript" src="./lib/pushtx.js"--></script>
+  <script type="text/javascript" src="./lib/ethlightjs.min.js"></script>
+  <script type="text/javascript" src="./lib/web3.min.js"></script>
+  <script type="text/javascript" src="./build/blockapps-web3.js"></script>
+  <style>
+    body {
+      background: -webkit-linear-gradient(left top, grey, white);
+      background: -o-linear-gradient(bottom right, grey, white);
+      background: -moz-linear-gradient(bottom right, grey, white);
+      background: linear-gradient(to bottom right, grey, white);
+      font: impact;
+    }
+
+    div {
+      //border: 1px black solid;
+      //display: inline-block;
+    }
+
+    .error {
+      color:red;
+      display: inline-block;
+      visibility: hidden;
+    }
+
+    textarea {
+      width: 35%;
+      height: 400px;
+      display: inline-block;
+      -webkit-box-sizing: border-box;
+      -moz-box-sizing: border-box;
+      box-sizing: border-box;
+    }
+
+    .spinner {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      height:60px;
+      width:60px;
+      margin:0px auto;
+      -webkit-animation: rotation .6s infinite linear;
+      -moz-animation: rotation .6s infinite linear;
+      -o-animation: rotation .6s infinite linear;
+      animation: rotation .6s infinite linear;
+      border-left:6px solid rgba(0,174,239,.15);
+      border-right:6px solid rgba(0,174,239,.15);
+      border-bottom:6px solid rgba(0,174,239,.15);
+      border-top:6px solid rgba(0,174,239,.8);
+      border-radius:100%;
+      opacity: .5;
+    }
+
+    @-webkit-keyframes rotation {
+      from {-webkit-transform: rotate(0deg);}
+      to {-webkit-transform: rotate(359deg);}
+    }
+    @-moz-keyframes rotation {
+      from {-moz-transform: rotate(0deg);}
+      to {-moz-transform: rotate(359deg);}
+    }
+    @-o-keyframes rotation {
+      from {-o-transform: rotate(0deg);}
+      to {-o-transform: rotate(359deg);}
+    }
+    @keyframes rotation {
+      from {transform: rotate(0deg);}
+      to {transform: rotate(359deg);}
+    }
+
+
+    #spinnerBox {
+      visibility: hidden;
+      position: absolute; 
+      top:0; 
+      background-color: 
+      rgba(128,128,128,0.5); 
+      width: 100%; 
+      height: 100%;
+    }
+
+  </style>
+
+  <script>
+    // See checkResults. I hate that this is a global variable but due
+    // to a problem in web3 we need to expose it to make the right calls.
+    window.provider = null;
+
+    var compilerData = {};
+    var input = $("#input");
+
+    function checkResults(tx_hash) {
+      // We have to go to the provider directly because for some reason
+      // web3.eth.getTransactionReceipt isn't implemented even though it's
+      // documented: 
+      // https://github.com/ethereum/wiki/wiki/JavaScript-API#web3ethgettransactionreceipt
+      var interval = null;
+      var totalAttempts = 0;
+      var maxAttempts = 120;
+      var attempt = function() {
+        window.provider.sendAsync({
+          id: new Date().getTime(),
+          jsonrpc: "2.0",
+          method: "eth_getTransactionReceipt",
+          params: [
+            tx_hash
+          ]}
+        , function(err, result) {
+          totalAttempts += 1;
+
+          // Ignore errors, for now.
+          if (err == null) {
+            var tx = result.result;
+
+            if (tx != null && tx.contractAddress != null) {
+              clearInterval(interval);
+              spinnerBox.style.visibility = 'hidden';
+              console.log(tx.contractAddress);
+              alert('Transaction has been submitted successfully!');
+            }
+          }
+
+          if (totalAttempts >= maxAttempts) {
+            clearInterval(interval);
+            alert("Transaction wasn't successful after 120 seconds!");
+          }
+        });
+      };
+
+      interval = setInterval(attempt, 1000);
+      attempt();
+    }
+
+    function submitTransaction() {
+      if (compilerData.error) {
+        alert("You can't submit the contract until it has succesfully compiled");
+        return;
+      }
+
+      if (compilerData.code == null) {
+        alert("Error!  There is no contract to submit.");
+        return;
+      }
+
+      spinnerBox.style.visibility = "visible";
+      
+      var tx = {
+        from: $("#address").val(),
+        gasPrice: parseInt(gasPrice.value),
+        gasLimit: parseInt(gasLimit.value),
+        data: compilerData.code
+      };
+
+      web3.eth.sendTransaction(tx, function(err, tx_hash) {
+        checkResults(tx_hash);
+      });
+    }
+
+    function compile() {
+      var input = $("#input")
+      web3.eth.compile.solidity(input.val(), function(err, results) {
+        compilerData = results || {}
+        compilerData.error = err
+
+        if (err == null) {
+          $("#output").val("Compiled binary:\n\n" + compilerData.code)
+        }
+      })
+    }
+      
+    function loadSeedInfoAndSetProvider() {
+      var password = document.getElementById("password").value
+      var seed = document.getElementById("seed").value
+      console.log("creating keystore")
+      console.log("seed: " + seed)
+      console.log("password: " + password)
+      keystore = new ethlightjs.keystore(seed, password)
+
+      var x = document.getElementById("address");
+
+      for (i = x.length-1; i >= 0; i--) {
+        x.remove(i)
+      }
+
+      var accounts = {};
+
+      for(i = 0; i < 10; i++){
+        var option = document.createElement("option");
+        var addr = keystore.generateNewAddress(password);
+        var prvKey = keystore.exportPrivateKey(addr, password)
+
+        accounts[addr] = prvKey;
+
+        option.text =  addr
+        option.innerHTML = addr
+        x.appendChild(option);
+      }
+
+      // See checkResults() to know why this is global (I know, it's gross).
+      window.provider = new BlockAppsWeb3Provider({accounts: accounts});
+      web3.setProvider(window.provider);
+    }
+
+    function loadAccountInfo() {
+      var password = document.getElementById("password").value
+      var seed = document.getElementById("seed").value
+
+      var address = document.getElementById("address").value
+      console.log("fetching prvkey")
+      console.log("address: " + address)
+      console.log("password: " + password)
+      prvKey = keystore.exportPrivateKey(address, password)
+      console.log("setting prvkey: " + prvKey)
+
+      document.getElementById("prvkey").value = prvKey
+
+      if (!prvkey.value.match(/^[a-f0-9]{64}$/i)) {
+        invalidPrvKeyWarning.style.visibility = "visible";
+        return;
+      }
+    }
+
+  </script>
+
+</head>
+<body>
+  <h1>BlockApps + Web3! Type your Solidity source code in below</h1>
+  <div style="width: 100%">
+    <textarea id="input" onchange="compile();" onkeyup="compile()">
+contract NameCoin {
+
+  struct Item {
+    address owner;
+    uint value;
+  }
+
+  address gAddress;
+  uint gValue;
+  mapping (uint => Item) registry;
+  
+  function NameCoin() {
+      gAddress = msg.sender;
+  }
+
+  function register(uint key) {
+    if (registry[key].owner == 0) {
+       registry[key].owner = msg.sender;
+    }
+  }
+
+  function transferOwnership(uint key, address newOwner) {
+    if (registry[key].owner == msg.sender) {
+        registry[key].owner = newOwner;
+    }
+  }
+
+  function setValue(uint key, uint newValue) {
+    if (registry[key].owner == msg.sender) {
+      registry[key].value = newValue;
+    }
+  }
+
+  function getValue(uint key) constant returns (uint value) {
+    gValue = registry[key].value;
+  }
+
+  function getOwner(uint key) constant returns (address owner) {
+    gAddress = registry[key].owner;
+  }
+}
+
+    </textarea>
+    <textarea id="output" style="border: 0px;" readonly="true"></textarea>
+  </div>
+
+  <table>
+    <tr>
+      <td style="text-align: right;"><label for="seed">Seed:</label></td>
+      <td><input id="seed" style="width: 500px;" 
+           value="unhappy nerve cancel reject october fix vital pulse cash behind curious bicycle"
+           onkeyup="loadSeedInfo();" onload="loadSeedInfo();"/></td>
+    </tr>
+    <tr>
+      <td style="text-align: right;"><label for="password">Password:</label></td>
+      <td><input id="password" style="width: 300px;" type="password" value='mypassword'/></td>
+    </tr>
+
+    <tr>
+      <td style="text-align: right;"><label for="prvkey">Private Key:</label></td>
+      <td><input id="prvkey" style="width: 500px;"      /><div id="invalidPrvKeyWarning" class="error">Invalid Private Key</div></td>
+    </tr>
+    <tr>
+      <td style="text-align: right;"><label for="address">Address:</label></td>
+      <td><select id="address" onchange="loadAccountInfo()">
+     <option value=undefined>no address found</option>
+     </select>
+    </tr>
+    <tr>
+      <td style="text-align: right;"></td>
+      <td style="text-align: right;"><button id="submitButton" onclick="submitTransaction()">Press here to submit transaction</button></td>
+    </tr>
+  </table>
+
+  <details>
+    <summary>Advanced Options</summary>
+    <table style="border: solid; width: 400px; ">
+      <tr>
+        <td style="text-align: right;"><label for="gasLimit">Gas Limit:</label></td>
+        <td><input id="gasLimit" value="1000000" style="width: 300px;" /></td>
+      </tr>
+      <tr>
+        <td style="text-align: right;"><label for="gasPrice">Gas Price:</label></td>
+        <td><input id="gasPrice" value="100000" style="width: 300px" /></td>
+      </tr>
+      <tr>
+        <td style="text-align: right;"><label for="nonce">Nonce:</label></td>
+        <td><input id="nonce" value="0" style="width: 300px" readonly /></td>
+      </tr>
+    </table>
+  </details>
+
+  <div id="spinnerBox">
+    <div class="spinner" />
+  </div>
+  
+  
+  <script>
+    $(document).on("ready", function() {
+      loadSeedInfoAndSetProvider(); 
+      loadAccountInfo();
+      compile();
+      input.selectionStart = 10;
+      input.selectionEnd = 22;
+    });
+  </script>
+</body>
+</html>
