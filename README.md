@@ -11,30 +11,48 @@ Node:
 First, `npm install web3` and `npm install blockapps-web3`. **TODO:** Add this to npm. Note: the last command doesn't yet work. Then, in your project:
 
 ```
-var web3 = require("web3");
 var BlockAppsWeb3Provider = require("blockapps-web3");
 ```
 
 Browser:
 
 ```
+<script type="text/javascript" src="bignumber.js"></script>
+<script type="text/javascript" src="ethereumjs-tx.js"></script> <!-- dist version -->
 <script type="text/javascript" src="web3.js"></script>
 <script type="text/javsacript" src="./build/blockapps-web3.js"></script>
 ```
+
+Note that to avoid dependency coupling, you must include [BigNumber](https://github.com/MikeMcl/bignumber.js/), [ethereumjs-tx](https://github.com/ethereum/ethereumjs-tx), and [web3](https://github.com/ethereum/web3.js) on your own when using BlockApps-Web3 in the browser. Those three dependencies **must** be included in the browser before including the `blockapps-web3.js` script.
 
 ### To Use:
 
 ```
 var provider = new BlockAppsWeb3Provider({
-  accounts: {...}, // Key/value pairs, key is address, value is private key.
+  accounts: {...}, // Key/value pairs, key is address, value is an object that
+                   // contains an unecrypted private key under the object's 
+                   // `private` key/value pair. See note below.
   coinbase: "...", // If not specified, will use the first account found.
-  host: "..."      // Specify the BlockApps hosts. Defaults to http://stablenet.blockapps.net
+  host: "..."      // Specify the BlockApps hosts. Defaults to: 
+                   // http://stablenet.blockapps.net
 });
 
 web3.setProvider(provider);
 ```
 
 Then use web3 like normal!
+
+**Note on accounts:** In order for the provider to sign transactions against BlockApps, it requires an address an its associated unencrypted private key. We recommend using [ethereumjs-accounts](https://github.com/SilentCicero/ethereumjs-accounts), but you can use any algorithm/library that provides BlockApps-Web3 with an object similar to the below:
+ 
+```
+{
+  "0xabcd1234...": {
+    "private": "... some private key as hex ...",
+    // can have other keys; they're ignored.
+  },
+  // other addresses...
+}
+```
 
 ### Implemented Methods
 
@@ -43,7 +61,9 @@ The following list the currently implemented methods. Some methods have restrict
 * `eth_coinbase`
 * `eth_accounts`
 * `eth_blockNumber`
+* `eth_call`
 * `eth_sendTransaction`
+* `eth_sendRawTransaction`
 * `eth_getCompilers`
 * `eth_compileSolidity`
 * `eth_getCode` (only supports block number “latest”)

@@ -398,8 +398,6 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
         callback null, tx_hash
 
     eth_call: (tx={}, block_number="latest", callback) ->
-      console.log tx, callback
-
       @eth_sendTransaction tx, (err, tx_hash) =>
         if err?
           callback err

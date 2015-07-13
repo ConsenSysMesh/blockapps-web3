@@ -453,7 +453,6 @@
         if (block_number == null) {
           block_number = "latest";
         }
-        console.log(tx, callback);
         return this.eth_sendTransaction(tx, (function(_this) {
           return function(err, tx_hash) {
             var attempt, attempts, interval, maxAttempts;
