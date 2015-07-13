@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "web3": "*",
-    "xmlhttprequest": "*"
+    "xmlhttprequest": "*",
+    "ethereumjs-tx": "*",
+    "bignumber.js": "*"
   },
   "devDependencies": {
     "grunt": "*",

@@ -1,24 +1,66 @@
-factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
+factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
+
+  class BlockFilter
+    contructor: (@provider) ->
+      @provider.eth_blockNumber (err, number) =>
+        throw err if err?
+        @block_number = web3.toDecimal(number)
+
+    getChanges: (callback) ->
+      @provider.eth_blockNumber (err, finish_number) =>
+        if err?
+          callback err
+          return
+
+        if finish_number <= @block_number + 1
+          callback null, []
+
+        getBlockHashesRecursively [], @block_number + 1, finish_number, (err, hashes) =>
+          if err?
+            callback err
+            return
+
+          @block_number = finish_number
+
+    getBlockHashesRecursively: (hashes, current_number, finish_number, callback) ->
+      @getBlockHash current_number, (err, hash) =>
+        if err?
+          callback err
+          return
+
+        hashes.push hash
+
+        return if current_number >= finish_number
+
+        @getBlockHashesRecursively hashes, current_number + 1, finish_number, callback
+
+    getBlockHash: (block_number, callback) ->
+      # Request the next block so we can get the parent hash.
+      @provider.requestFromBlockApps "/query/block?number=#{block_number + 1}", (err, block_result) =>
+        if err?
+          callback err
+          return
+
+        # Null callback result. This is an important special case, signaling the BlockFilter
+        # that it can't get more changes past this block number.
+        if block_result.length == 0
+          callback()
+
+        block = block_result[0]
+
+        callback null, "0x" + block_result.blockData.parentHash
+
 
   class BlockAppsWeb3Provider
-    class BlockFilter
-      contructor: (@provider) ->
-        @provider.eth_blockNumber (err, number) =>
-          throw err if err?
-          @block_number = web3.toDecimal(number)
-
-      getChanges: () ->
-
-
-    # accounts is a hash where the key is the address and
-    # the value is the private key.
+    # accounts is an object returned from ethereumjs-accounts
+    # i.e., accounts = accounts.get(). Key is the address, value is the account info.
     constructor: (options={}) ->
       @coinbase = options.coinbase
       @accounts = options.accounts || {}
       @host = options.host || "http://stablenet.blockapps.net"
 
       if Object.keys(@accounts).length == 0
-        throw new Error("At least one account and private key must be passed to BlockAppsWeb3Provider.")
+        throw new Error("At least one account must be passed to BlockAppsWeb3Provider.")
 
       # Derive a coinbase if none is set.
       if !@coinbase?
@@ -37,8 +79,10 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
       # Provider functions are expected to be named exactly like their
       # analogous web3 methods.
       method = payload.method
+      console.log method
+
       if !@[method]?
-        callback(new Error("BlockAppsWeb3Provider does not yet support the Web3 method '#{method}'."))
+        throw new Error("BlockAppsWeb3Provider does not yet support the Web3 method '#{method}'.")
         return
 
       args = payload.params
@@ -58,10 +102,15 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
       @[method].apply(@, args)
 
     # Make the actual requests to the BlockApps backend.
-    requestFromBlockApps: (path, params, callback) ->
+    requestFromBlockApps: (path, params, contentType, callback) ->
       if typeof params == "function"
         callback = params
         params = null
+        contentType = "application/x-www-form-urlencoded"
+
+      if typeof contentType == "function"
+        callback = contentType
+        contentType = "application/x-www-form-urlencoded"
 
       request = new XMLHttpRequest()
 
@@ -79,19 +128,24 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
       type = if params? then "POST" else "GET"
 
       request.open type, "#{@host}#{path}", true
-      #request.setRequestHeader 'Content-type', 'application/json'
-      request.setRequestHeader "Content-type", "application/x-www-form-urlencoded"
+      request.setRequestHeader "Content-type", contentType
 
-      param_string = ""
+      final_params = null
 
-      for key, value of params
-        if param_string != ""
-          param_string += "&"
+      if contentType == "application/x-www-form-urlencoded"
+        final_params = ""
 
-        param_string += "#{key}=#{encodeURIComponent(value)}"
+        for key, value of params
+          if final_params != ""
+            final_params += "&"
+
+          final_params += "#{key}=#{encodeURIComponent(value)}"
+
+      if contentType == "application/json"
+        final_params = JSON.stringify(params)
 
       try
-        request.send param_string
+        request.send final_params
       catch error
         callback error
         # TODO: Make this error a web3 error, a la:
@@ -140,6 +194,7 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
             callback(null, tx, block, txinfo)
 
     strip0x: (string) ->
+      return string if !string?
       return string.replace("0x", "")
 
 
@@ -207,7 +262,7 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
         }
 
         if tx.to?
-          returnVal.to = tx.to
+          returnVal.to = "0x" + tx.to
 
         callback null, returnVal
 
@@ -271,14 +326,14 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
         callback new Error("'from' not found, is required")
         return
 
-      private_key = @accounts[tx.from]
+      private_key = @strip0x(@accounts[tx.from].private)
 
       if !private_key?
         callback new Error("Could not find private key for account: #{tx.from}")
         return
 
       # Get the address's nonce.
-      @requestFromBlockApps "/query/account?address=#{tx.from}", (err, response) =>
+      @requestFromBlockApps "/query/account?address=#{@strip0x(tx.from)}", (err, response) =>
         if err?
           callback err
           return
@@ -289,17 +344,90 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
         else
           nonce = 0
 
-        url = "#{@host}/includetransaction"
+        # Assemble the raw transaction data.
+        rawTx = 
+          nonce: web3.fromDecimal(nonce)
+          gasPrice: @strip0x(web3.fromDecimal(tx.gasPrice || gasPrice))
+          gasLimit: @strip0x(web3.fromDecimal(tx.gasLimit || 1900000))
+          value: @strip0x(web3.fromDecimal(tx.value || 0))
+          data: '00'
+ 
+        if tx.to?
+          rawTx.to = @strip0x(tx.to)
+        
+        if tx.data?
+          rawTx.data = @strip0x(tx.data)
 
-        # pushTX does its own translation from decimal to hex, as does web3.
-        # Which means we have to translate *back* to decimal before sending to pushTX...
-        tx.gasLimit = web3.toDecimal(tx.gasLimit)
-        tx.gasPrice = web3.toDecimal(tx.gasPrice)
+        private_key = new Buffer(private_key, 'hex')
 
-        blockapps.pushTX nonce, tx.gasPrice, tx.gasLimit, tx.to, tx.value, tx.data, private_key, url, (tx_response) ->
-          tx_hash = "0x" + tx_response.replace(/.*=/, "")
-          callback null, tx_hash
+        tx = new EthTx(rawTx)
+        tx.sign(private_key)
 
+        serializedTx = tx.serialize().toString('hex')
+
+        @eth_sendRawTransaction serializedTx, callback
+
+    eth_sendRawTransaction: (rawTx, callback) ->
+      ttx = new EthTx(new Buffer(rawTx, 'hex'))
+
+      BigNumber.config({ EXPONENTIAL_AT: 20000000 })
+      rawString = ttx.value.toString('hex')
+      bigValue = new BigNumber(0)
+
+      if rawString != ''
+        bigValue = new BigNumber(rawString, 16)
+
+      js = 
+        from : ttx.getSenderAddress().toString('hex')
+        nonce : ethUtil.bufferToInt(ttx.nonce)
+        gasPrice : ethUtil.bufferToInt(ttx.gasPrice)
+        gasLimit : ethUtil.bufferToInt(ttx.gasLimit)
+        value : bigValue.toString()
+        codeOrData : (ttx.data).toString('hex')
+        r : (ttx.r).toString('hex')
+        s : (ttx.s).toString('hex')
+        v : (ttx.v).toString('hex')
+        hash : ttx.hash().toString('hex')
+
+      # Contract?
+      if ttx.to.length != 0
+        js.to = (ttx.to).toString('hex')
+
+      @requestFromBlockApps "/includetransaction", js, "application/json", (err, tx_response) ->
+        tx_hash = "0x" + tx_response.replace(/.*=/, "")
+        callback null, tx_hash
+
+    eth_call: (tx={}, block_number="latest", callback) ->
+      console.log tx, callback
+
+      @eth_sendTransaction tx, (err, tx_hash) =>
+        if err?
+          callback err
+          return
+
+        tx_hash = @strip0x(tx_hash)
+
+        attempts = 0
+        maxAttempts = 5
+        interval = null
+
+        attempt = () =>
+          attempts += 1
+          # Ensure the contract was actually created.
+          @requestFromBlockApps "/transactionResult/#{tx_hash}", (err, txinfo_result) =>
+            if !err? and txinfo_result.length > 0
+              txinfo = txinfo_result[0]
+
+              if txinfo.response?
+                clearInterval(interval)
+                callback null, "0x" + txinfo.response
+
+            if attempts >= maxAttempts
+              clearInterval(interval)
+              callback("Couldn't get call() return value after #{attempts} attempts.")
+
+        interval = setInterval attempt, 1000
+        attempt()
 
     eth_getTransactionReceipt: (tx_hash, callback) ->
       @requestTransactionData tx_hash, (err, tx, block, txinfo) ->
@@ -332,7 +460,7 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
         if tx.to?
           returnVal.to = "0x" + tx.to
 
-        expected_address = tx_util.generateAddress(tx.from, parseInt(tx.nonce + 1)).toString('hex')
+        expected_address = ethUtil.generateAddress(tx.from, parseInt(tx.nonce + 1)).toString('hex')
 
         # If the VM trace doesn't include the expected address, then the
         # transaction hasn't been processed yet.
@@ -363,6 +491,30 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
       delete @filters[filter_id]
       callback null, true
 
+    eth_getFilterChanges: (filter_id, callback) ->
+      filter_id = web3.toDecimal(filter_id)
+      filter = @filters[filter_id]
+
+      if !filter?
+        callback null, []
+        return
+
+      filter.getChanges(callback)
+
+    eth_gasPrice: (callback) ->
+      @requestFromBlockApps "/query/transaction/last/1", (err, tx_result) ->
+        if err?
+          callback err
+          return
+
+        if tx_result.length == 0
+          callback(new Error("Could not determine current gasPrice!"))
+          return
+
+        tx = tx_result[0]
+
+        callback null, web3.fromDecimal(tx.gasPrice)
+
     web3_clientVersion: (callback) ->
       callback null, "BlockApps Web3 Provider/0.0.1/JavaScript"
 
@@ -370,10 +522,11 @@ factory = (web3, XMLHttpRequest, blockapps, tx_util) ->
 
   BlockAppsWeb3Provider
 
-# Note, in both cases, api and util are made available by the build system.
-# This is a bit gross, and should eventually be better (with better, less common names).
+# Note, EthTx, Buffer, ethUtil are provided by the ethereumjs-tx module.
+# In node, it globals Buffer and ethUtil; in the browser, it also globals EthTx.
 if module? and module.exports?
-  module.exports = factory(require("web3"), require("xmlhttprequest"), api, util)
+  EthTx = require("ethereumjs-tx")
+  module.exports = factory(require("web3"), require("xmlhttprequest"), require("bignumber.js"), EthTx, Buffer, ethUtil)
 else
   # We expect web3 to already be included.
-  window.BlockAppsWeb3Provider = factory(web3, XMLHttpRequest, api, util)
+  window.BlockAppsWeb3Provider = factory(window.web3, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil)
