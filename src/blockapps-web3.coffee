@@ -1,7 +1,7 @@
 factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
 
   class BlockFilter
-    contructor: (@provider) ->
+    constructor: (@provider) ->
       @provider.eth_blockNumber (err, number) =>
         throw err if err?
         @block_number = web3.toDecimal(number)
@@ -12,31 +12,64 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
           callback err
           return
 
-        if finish_number <= @block_number + 1
-          callback null, []
+        finish_number = web3.toDecimal(finish_number)
 
-        getBlockHashesRecursively [], @block_number + 1, finish_number, (err, hashes) =>
+        # if finish_number < @block_number + 1
+        #   callback null, []
+        #   return
+
+        @getBlockHashesRecursively [], @block_number, finish_number, (err, hashes) =>
           if err?
             callback err
             return
 
-          @block_number = finish_number
+          # We're done finding hashes. Update the block filter with the newest number.
+          #if hashes.length > 0
+          #  @block_number = finish_number
+
+          callback(null, hashes)
 
     getBlockHashesRecursively: (hashes, current_number, finish_number, callback) ->
       @getBlockHash current_number, (err, hash) =>
         if err?
           callback err
           return
+        
+        if hash?
+          hashes.push hash
 
-        hashes.push hash
-
-        return if current_number >= finish_number
+        # We've gone as far as we can now. Stop.
+        if current_number >= finish_number or !hash?
+          callback(null, hashes)
+          return
 
         @getBlockHashesRecursively hashes, current_number + 1, finish_number, callback
 
     getBlockHash: (block_number, callback) ->
       # Request the next block so we can get the parent hash.
-      @provider.requestFromBlockApps "/query/block?number=#{block_number + 1}", (err, block_result) =>
+
+      ###############################################################################
+      ############################### BIG DIRTY HACK! ###############################
+      ###############################################################################
+
+      # Explanation: When you query blockapps for a block by block number, it won't
+      # give you its own hash. Instead, it gives you the hash of the block that came
+      # before it (parentHash). In order to successfully get the hash of the current
+      # block number, then, we have to request block with number (block_number + 1).
+      # However: stablenet, currently, isn't a blockchain that continues punching out
+      # blocks every 12 seconds or so, which means the block with block number of 
+      # (block_number + 1) won't exist until someone makes another transaction, which
+      # could be never (stablenet creates new blocks as transactions come in). So,
+      # in order to get this to work correctly with web3, we're actually going to 
+      # request the *current* block (block_number), rather than the next block
+      # (block_number + 1). This is going to return the wrong parent hash, but it's
+      # the only way we can successfully integrate with most apps that use block
+      # filters. Thankfully, the block hashes in block filters don't usually matter.
+
+      # Here's what the code should be once stablenet starts acting like a real network:
+      # @provider.requestFromBlockApps "/query/block?number=#{block_number + 1}", (err, block_result) =>
+
+      @provider.requestFromBlockApps "/query/block?number=#{block_number}", (err, block_result) =>
         if err?
           callback err
           return
@@ -45,10 +78,11 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
         # that it can't get more changes past this block number.
         if block_result.length == 0
           callback()
+          return
 
         block = block_result[0]
 
-        callback null, "0x" + block_result.blockData.parentHash
+        callback null, "0x" + block.blockData.parentHash
 
 
   class BlockAppsWeb3Provider
@@ -56,16 +90,12 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
     # i.e., accounts = accounts.get(). Key is the address, value is the account info.
     constructor: (options={}) ->
       @coinbase = options.coinbase
-      @accounts = options.accounts || {}
+      @accounts = options.accounts || []
       @host = options.host || "http://stablenet.blockapps.net"
-
-      if Object.keys(@accounts).length == 0
-        throw new Error("At least one account must be passed to BlockAppsWeb3Provider.")
-
-      # Derive a coinbase if none is set.
-      if !@coinbase?
-        @coinbase = Object.keys(@accounts)[0]
-
+      @verbose = options.verbose || false
+      @gasPrice = options.gasPrice || 1000000000000
+      @keyprovider = options.keyprovider || () ->
+        throw new Error("No key provider given to BlockApps + Web3. Can't send transaction.")
       @filter_index = 0
       @filters = {}
 
@@ -76,16 +106,24 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
     # on RPC functions, and then wrap up the result to look like a JSON rpc response.
     # This is our hook into web3 -- all the other functions support this one.
     sendAsync: (payload, callback) ->
+      if payload instanceof Array
+        @processBatchRequest payload, callback
+      else
+        @processSingleRequest payload, callback
+
+    processSingleRequest: (payload, callback) ->
       # Provider functions are expected to be named exactly like their
       # analogous web3 methods.
       method = payload.method
-      console.log method
 
       if !@[method]?
         throw new Error("BlockAppsWeb3Provider does not yet support the Web3 method '#{method}'.")
         return
 
-      args = payload.params
+      args = []
+
+      for param in payload.params || []
+        args.push param
 
       # Push a callback function to wrap up the response into
       # what web3 expects.
@@ -98,8 +136,37 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
 
         callback err, wrapped
 
+      fn = @[method]
+
+      if fn.length != args.length
+        callback(new Error("Invalid number of parameters passed to #{method}"))
+        return
+
       # Call the function associated with the RPC method.
-      @[method].apply(@, args)
+      fn.apply(@, args)
+
+    # Process batch requests in series.
+    processBatchRequest: (batch, callback) ->
+      current_index = -1
+
+      results = []
+
+      makeNextRequest = () =>
+        current_index += 1
+        @processSingleRequest batch[current_index], (err, result) ->
+          if err?
+            callback err
+            return
+
+          results.push result
+
+          if current_index >= batch.length - 1
+            callback null, results
+            return
+          
+          makeNextRequest()
+
+      makeNextRequest()
 
     # Make the actual requests to the BlockApps backend.
     requestFromBlockApps: (path, params, contentType, callback) ->
@@ -114,21 +181,29 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
 
       request = new XMLHttpRequest()
 
-      request.onreadystatechange = ->
+      request.onreadystatechange = () =>
         if request.readyState == 4
           result = request.responseText
+
           error = null
           try
             result = JSON.parse(result)
           catch e
             error = e
+
+          if @verbose
+            toPrint = result
+            if typeof toPrint != "string"
+              toPrint = JSON.stringify(toPrint, null, 2)
+            console.log "BLOCKAPPS RESPONSE:\n#{toPrint}\n"
+
           callback error, result
         return
 
-      type = if params? then "POST" else "GET"
+      method = if params? then "POST" else "GET"
 
-      request.open type, "#{@host}#{path}", true
-      request.setRequestHeader "Content-type", contentType
+      request.open(method, "#{@host}#{path}", true)
+      request.setRequestHeader("Content-type", contentType)
 
       final_params = null
 
@@ -144,12 +219,45 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
       if contentType == "application/json"
         final_params = JSON.stringify(params)
 
+      if @verbose
+        console.log "BLOCKAPPS REQUEST:\n#{method} #{@host}#{path} - #{final_params} - #{contentType}\n"
+
       try
-        request.send final_params
+        if final_params? and final_params != ""
+          request.send(final_params)
+        else
+          request.send()
       catch error
         callback error
         # TODO: Make this error a web3 error, a la:
         # callback errors.InvalidConnection(@host)
+
+    # Right now, "/transactionResult" outputs errors in such a nasty
+    # way that we need a function to encapsulate error handling so as
+    # to to have duplication.
+    requestTransactionResult: (tx_hash, callback) ->
+      tx_hash = @strip0x(tx_hash)
+      @requestFromBlockApps "/transactionResult/#{tx_hash}", (err, txinfo_result) =>
+        # If there's an explicit error, pass it down.
+        if err?
+          callback err
+          return
+
+        # If we have no result, then pass a null result.
+        if txinfo_result.length == 0
+          callback null, null
+          return
+
+        txinfo = txinfo_result[txinfo_result.length - 1]
+
+        # If we have an result message that's not "Success!", error.
+        if txinfo.message? and txinfo.message.toLowerCase().indexOf("success") < 0
+          callback(new Error(txinfo.message))
+          return
+
+        # Finally, send what we've got.
+        callback(null, txinfo)
+
 
     # We have to make three requests to get all the data we need
     # for many transaction-related calls.
@@ -180,16 +288,10 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
           block = block_result[0]
 
           # Ensure the contract was actually created.
-          @requestFromBlockApps "/transactionResult/#{tx_hash}", (err, txinfo_result) =>
-            if err?
-              callback err
+          @requestTransactionResult tx_hash, (err, txinfo) =>
+            if err? or !txinfo?
+              callback err, txinfo
               return
-
-            if txinfo_result.length == 0
-              callback null, null
-              return
-
-            txinfo = txinfo_result[0]
 
             callback(null, tx, block, txinfo)
 
@@ -201,10 +303,13 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
     ############## Web3 Methods ##############
 
     eth_coinbase: (callback) ->
-      callback null, @coinbase
+      if !@coinbase?
+        callback new Error("No coinbase specified in the BlockApps + Web3 provider!")
+      else
+        callback null, @coinbase
 
     eth_accounts: (callback) ->
-      callback null, Object.keys(@accounts)
+      callback null, @accounts
 
     eth_blockNumber: (callback) ->
       @requestFromBlockApps "/query/block/last/1", (err, response) ->
@@ -287,13 +392,14 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
     eth_getCode: (contract_address, block_number="latest", callback) ->
       contract_address = @strip0x(contract_address)
 
-      @requestFromBlockApps "/query/block?address=#{contract_address}", (err, response) ->
+      # Treat the contract address as an account
+      @requestFromBlockApps "/query/account?address=#{contract_address}", (err, response) ->
         if err?
           callback err
           return
 
         if response.length == 0
-          callback null, null
+          callback()
           return
 
         callback null, "0x" + response[response.length - 1].code
@@ -307,29 +413,28 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
           callback err
           return
 
-        callback null, {
-          code: response.contracts[response.contracts.length - 1].bin
-          info: 
-            source: src
-            language: "Solidity"
-            languageVersion: "0"
-            compilerVersion: "0"
-            abiDefinition: response.abis[response.abis.length - 1].abi
-            userDoc: 
-              methods: {}
-            developerDoc: 
-              methods: {}
-        }
+        returnVal = {}
+
+        for contract, index in response.contracts
+          name = contract.name
+          returnVal[name] = 
+            code: contract.bin
+            info: 
+              source: src
+              language: "Solidity"
+              languageVersion: "0"
+              compilerVersion: "0"
+              abiDefinition: response.abis[index].abi
+              userDoc: 
+                methods: {}
+              developerDoc: 
+                methods: {}
+
+        callback null, returnVal
 
     eth_sendTransaction: (tx={}, callback) ->
       if !tx.from?
         callback new Error("'from' not found, is required")
-        return
-
-      private_key = @strip0x(@accounts[tx.from].private)
-
-      if !private_key?
-        callback new Error("Could not find private key for account: #{tx.from}")
         return
 
       # Get the address's nonce.
@@ -347,7 +452,7 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
         # Assemble the raw transaction data.
         rawTx = 
           nonce: web3.fromDecimal(nonce)
-          gasPrice: @strip0x(web3.fromDecimal(tx.gasPrice || gasPrice))
+          gasPrice: @strip0x(web3.fromDecimal(tx.gasPrice || @gasPrice))
           gasLimit: @strip0x(web3.fromDecimal(tx.gasLimit || 1900000))
           value: @strip0x(web3.fromDecimal(tx.value || 0))
           data: '00'
@@ -358,14 +463,20 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
         if tx.data?
           rawTx.data = @strip0x(tx.data)
 
-        private_key = new Buffer(private_key, 'hex')
+        rawTx.from = @strip0x(tx.from)
 
-        tx = new EthTx(rawTx)
-        tx.sign(private_key)
+        transaction = new EthTx(rawTx)
 
-        serializedTx = tx.serialize().toString('hex')
+        @keyprovider rawTx.from, (err, unencrypted_private_key) =>
+          if err?
+            callback(err)
+            return
 
-        @eth_sendRawTransaction serializedTx, callback
+          private_key = new Buffer(@strip0x(unencrypted_private_key), 'hex')
+          transaction.sign(private_key)
+          serializedTx = transaction.serialize().toString('hex')
+
+          @eth_sendRawTransaction serializedTx, callback
 
     eth_sendRawTransaction: (rawTx, callback) ->
       ttx = new EthTx(new Buffer(rawTx, 'hex'))
@@ -412,13 +523,14 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
         attempt = () =>
           attempts += 1
           # Ensure the contract was actually created.
-          @requestFromBlockApps "/transactionResult/#{tx_hash}", (err, txinfo_result) =>
-            if !err? and txinfo_result.length > 0
-              txinfo = txinfo_result[0]
+          @requestTransactionResult tx_hash, (err, txinfo) =>
+            if err?
+              callback err, txinfo
+              return
 
-              if txinfo.response?
-                clearInterval(interval)
-                callback null, "0x" + txinfo.response
+            if txinfo? and txinfo.response?
+              clearInterval(interval)
+              callback null, web3.toHex(txinfo.response)
 
             if attempts >= maxAttempts
               clearInterval(interval)
@@ -435,7 +547,7 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
 
         # Transaction is pending, or incomplete, or never made it.
         if !tx? or !block? or !txinfo?
-          callback()
+          callback(null, null)
           return
 
         # Get the transaction index by comparing transactions r, s and v values.
@@ -524,7 +636,7 @@ factory = (web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) ->
 # In node, it globals Buffer and ethUtil; in the browser, it also globals EthTx.
 if module? and module.exports?
   EthTx = require("ethereumjs-tx")
-  module.exports = factory(require("web3"), require("xmlhttprequest"), require("bignumber.js"), EthTx, Buffer, ethUtil)
+  module.exports = factory(require("web3"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil)
 else
   # We expect web3 to already be included.
   window.BlockAppsWeb3Provider = factory(window.web3, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil)

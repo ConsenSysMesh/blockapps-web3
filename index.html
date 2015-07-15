@@ -94,6 +94,7 @@
     var input = $("#input");
 
     var accounts = new Accounts({minPassphraseLength: 6});
+    var all_accounts = null;
 
     function checkResults(tx_hash) {
       // We have to go to the provider directly because for some reason
@@ -121,7 +122,7 @@
             if (tx != null && tx.contractAddress != null) {
               clearInterval(interval);
               spinnerBox.style.visibility = 'hidden';
-              console.log(tx.contractAddress);
+              console.log("New Contract: " + tx.contractAddress);
               alert('Transaction has been submitted successfully!');
             }
           } else {
@@ -184,7 +185,7 @@
       var password = document.getElementById("password").value
       var x = document.getElementById("address");
 
-      var all_accounts = accounts.get();
+      all_accounts = accounts.get();
       var addresses = Object.keys(all_accounts);
 
       if (addresses.length == 0) {
@@ -196,15 +197,12 @@
       }
       
       // Redo these, in case we added some.
-      var all_accounts = accounts.get();
+      all_accounts = accounts.get();
       var addresses = Object.keys(all_accounts);
-      var unlocked_accounts = {}
 
       for (var i = 0; i < addresses.length; i++) {
         var address = addresses[i];
         var account = all_accounts[address];
-
-        unlocked_accounts[address] = accounts.get(address, password);
 
         var option = document.createElement("option");
         option.text =  account.address;
@@ -213,7 +211,17 @@
       }
 
       // See checkResults() to know why this is global (I know, it's gross).
-      window.provider = new BlockAppsWeb3Provider({accounts: unlocked_accounts});
+      window.provider = new BlockAppsWeb3Provider({
+        keyprovider: function(address, callback) {
+          var account = accounts.get(address, password);
+          
+          if (account.locked == true) {
+            callback(new Error("Invalid password!"));
+          } else {
+            callback(null, account.private);
+          }
+        }
+      });
       web3.setProvider(window.provider);
     }
 

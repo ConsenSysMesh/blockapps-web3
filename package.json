@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "A Web3 Provider for the BlockApps backend",
   "author": "Tim Coulter",
-  "main": "build/blockapps-web3.js",
+  "main": "src/blockapps-web3.coffee",
   "private": false,
   "scripts": {},
   "repository": {
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "web3": "*",
-    "xmlhttprequest": "*",
+    "xhr2": "*",
     "ethereumjs-tx": "*",
     "bignumber.js": "*"
   },

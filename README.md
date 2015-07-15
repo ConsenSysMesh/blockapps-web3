@@ -28,35 +28,47 @@ Note that to avoid dependency coupling, you must include [BigNumber](https://git
 ### To Use:
 
 ```
-var provider = new BlockAppsWeb3Provider({
-  accounts: {...}, // Key/value pairs, key is address, value is an object that
-                   // contains an unecrypted private key under the object's 
-                   // `private` key/value pair. See note below.
-  coinbase: "...", // If not specified, will use the first account found.
-  host: "..."      // Specify the BlockApps hosts. Defaults to: 
-                   // http://stablenet.blockapps.net
-});
+// See below for options passed to the constructor.
+var provider = new BlockAppsWeb3Provider({ ... });
 
 web3.setProvider(provider);
 ```
 
 Then use web3 like normal!
 
-**Note on accounts:** In order for the provider to sign transactions against BlockApps, it requires an address an its associated unencrypted private key. We recommend using [ethereumjs-accounts](https://github.com/SilentCicero/ethereumjs-accounts), but you can use any algorithm/library that provides BlockApps-Web3 with an object similar to the below:
- 
+### Options
+
+The `BlockAppsWeb3Provider` constructor takes a single parameter with the following keys:
+
+* `keyprovider`: `function(address, callback)` - used for translating addresses into their associated private keys. You **must** pass a keyprovider function if you want to use `eth_sendTransaction` and `eth_call`.
+* `coinbase`: `string` - the coinbase address associated with `eth_coinbase`. You only need to specify this value if your app will call `eth_coinbase` via web3.
+* `accounts`: `Array` - the addresses associated with this provider. You only need to specify this value if your app will call `eth_accounts` via web3.
+
+### Writing your Key Provider
+
+In order for the BlockAppsWeb3Provider to reduce dependencies and stay implementation neutral, it does not manage and save addresses and their associated private keys. In order to sign transactions and send them to BlockApps, however, the provider must have a way of getting an address's unencrypted private key -- this is the role of the key provider.
+
+If you don't have a library in mind for managing your app's addresses and private keys for your users, we recommend [ethereumjs-accounts](https://github.com/SilentCicero/ethereumjs-accounts). Here's an example key provider using ethereumjs-accounts:
+
 ```
-{
-  "0xabcd1234...": {
-    "private": "... some private key as hex ...",
-    // can have other keys; they're ignored.
-  },
-  // other addresses...
-}
+var provider = new BlockAppsWeb3Provider({
+  keyprovider: function(address, callback) {
+    var passphrase = prompt("Please enter your password.");
+    var account = accounts.get(address, passphrase);
+    
+    if (account.locked == true) {
+      callback(new Error("Invalid password!"));
+    } else {
+      callback(null, account.private);
+    }
+  }
+});
 ```
+
 
 ### Implemented Methods
 
-The following list the currently implemented methods. Some methods have restrictions: For instance, any method that takes a block number of "latest", "earliest" or "pending" will default to "latest" regardless of what's passed to web3. Some of these restrictions are because they haven't been implemented; other restrictions are due to functionality not yet implemented by BlockApps.
+The following lists the currently implemented methods. Some methods have restrictions: For instance, any method that takes a block number of "latest", "earliest" or "pending" will default to "latest" regardless of what's passed to web3. Some of these restrictions are because they haven't been implemented; other restrictions are due to functionality not yet implemented by BlockApps.
 
 * `eth_coinbase`
 * `eth_accounts`
@@ -72,6 +84,7 @@ The following list the currently implemented methods. Some methods have restrict
 * `eth_getTransactionByHash`
 * `eth_getTransactionReceipt`
 * `eth_newBlockFilter`
+* `eth_getFilterChanges` (only supports block filters)
 * `eth_uninstallFilter`
 * `web3_clientVersion`
 
