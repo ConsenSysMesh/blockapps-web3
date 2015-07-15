@@ -103,7 +103,7 @@ To concatenate files and dependencies (this will create/overwrite `./build/block
 $ grunt
 ```
 
-To concatenate as well as minify (this will create/overwrite both `./build/blockapps-web3.js` and `./build/blockapps-web3.js`):
+To concatenate as well as minify (this will create/overwrite both `./build/blockapps-web3.js` and `./build/blockapps-web3.min.js`):
 
 ```
 $ grunt dist
