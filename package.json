@@ -3,9 +3,8 @@
   "version": "0.0.1",
   "description": "A Web3 Provider for the BlockApps backend",
   "author": "Tim Coulter",
-  "main": "src/blockapps-web3.coffee",
+  "main": "build/blockapps-web3.js",
   "private": false,
-  "scripts": {},
   "repository": {
     "type": "git",
     "url": "https://github.com/consensys/blockapps-web3.git"
