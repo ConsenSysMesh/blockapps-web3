@@ -4,6 +4,8 @@ This package provides a web3 provider for the BlockApps backend. This is not a w
 
 You can see an example of the provider in action by opening `index.html`.
 
+**IMPORTANT NOTE**: due to a current limitation of BlockApps at the time of this writing, `eth_call` requests cost Ether, and are treated just like transactions sent via `eth_sendTransaction`. Please take this into account when choosing to use BlockApps as a backend for your app.
+
 ### Install
 
 Node:
@@ -44,7 +46,8 @@ The `BlockAppsWeb3Provider` constructor takes a single parameter with the follow
 
 * `keyprovider`: `function(address, callback)` - used for translating addresses into their associated private keys. You **must** pass a keyprovider function if you want to use `eth_sendTransaction` and `eth_call`.
 * `coinbase`: `string` - the coinbase address associated with `eth_coinbase`. You only need to specify this value if your app will call `eth_coinbase` via web3.
-* `accounts`: `Array` - the addresses associated with this provider. You only need to specify this value if your app will call `eth_accounts` via web3.
+* `accounts`: `array` - the addresses associated with this provider. You only need to specify this value if your app will call `eth_accounts` via web3.
+* `host`: `string` - location of the BlockApps server this provider will point to. Defaults to `http://stablenet.blockapps.net`
 
 ### Writing your Key Provider
 
