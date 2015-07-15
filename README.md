@@ -8,7 +8,9 @@ You can see an example of the provider in action by opening `index.html`.
 
 Node:
 
-First, `npm install web3` and `npm install blockapps-web3`. **TODO:** Add this to npm. Note: the last command doesn't yet work. Then, in your project:
+```
+$ npm install blockapps-web3
+```
 
 ```
 var BlockAppsWeb3Provider = require("blockapps-web3");

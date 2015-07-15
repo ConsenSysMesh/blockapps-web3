@@ -1,6 +1,6 @@
 {
   "name": "blockapps-web3",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A Web3 Provider for the BlockApps backend",
   "author": "Tim Coulter",
   "main": "build/blockapps-web3.js",
