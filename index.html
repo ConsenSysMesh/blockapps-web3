@@ -75,11 +75,11 @@
 
     #spinnerBox {
       visibility: hidden;
-      position: absolute; 
-      top:0; 
-      background-color: 
-      rgba(128,128,128,0.5); 
-      width: 100%; 
+      position: absolute;
+      top:0;
+      background-color:
+      rgba(128,128,128,0.5);
+      width: 100%;
       height: 100%;
     }
 
@@ -99,7 +99,7 @@
     function checkResults(tx_hash) {
       // We have to go to the provider directly because for some reason
       // web3.eth.getTransactionReceipt isn't implemented even though it's
-      // documented: 
+      // documented:
       // https://github.com/ethereum/wiki/wiki/JavaScript-API#web3ethgettransactionreceipt
       var interval = null;
       var totalAttempts = 0;
@@ -146,13 +146,16 @@
         return;
       }
 
-      if (compilerData.code == null) {
+      var keys = Object.keys(compilerData);
+      var contract = compilerData[keys[0]];
+
+      if (!contract) {
         alert("Error!  There is no contract to submit.");
         return;
       }
 
       spinnerBox.style.visibility = "visible";
-      
+
       var tx = {
         from: $("#address").val(),
         gasPrice: parseInt(gasPrice.value),
@@ -172,15 +175,19 @@
     function compile() {
       var input = $("#input")
       web3.eth.compile.solidity(input.val(), function(err, results) {
-        compilerData = results || {}
-        compilerData.error = err
+        compilerData = results || {};
 
         if (err == null) {
-          $("#output").val("Compiled binary:\n\n" + compilerData.code)
+          var keys = Object.keys(compilerData);
+          var contract = compilerData[keys[0]];
+
+          $("#output").val("Compiled binary:\n\n" + contract.code);
+        } else {
+          compilerData.err = err;
         }
       })
     }
-      
+
     function loadAccounts() {
       var password = document.getElementById("password").value
       var x = document.getElementById("address");
@@ -195,7 +202,7 @@
           accounts.set(account.address, account);
         }
       }
-      
+
       // Redo these, in case we added some.
       all_accounts = accounts.get();
       var addresses = Object.keys(all_accounts);
@@ -214,7 +221,7 @@
       window.provider = new BlockAppsWeb3Provider({
         keyprovider: function(address, callback) {
           var account = accounts.get(address, password);
-          
+
           if (account.locked == true) {
             callback(new Error("Invalid password!"));
           } else {
@@ -248,7 +255,7 @@ contract NameCoin {
   address public gAddress;
   uint gValue;
   mapping (uint => Item) registry;
-  
+
   function NameCoin() {
       gAddress = msg.sender;
   }
@@ -325,11 +332,11 @@ contract NameCoin {
   <div id="spinnerBox">
     <div class="spinner" />
   </div>
-  
-  
+
+
   <script>
     $(document).on("ready", function() {
-      loadAccounts(); 
+      loadAccounts();
       loadAccountInfo();
       compile();
       input.selectionStart = 10;
