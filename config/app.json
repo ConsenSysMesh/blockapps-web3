@@ -1,0 +1,24 @@
+{
+  "build": {
+    "blockapps-web3.js": "blockapps-web3.js",
+    "blockapps-web3.min.js": {
+      "files": [
+        "blockapps-web3.js"
+      ],
+      "post-process": [
+        "uglify"
+      ]
+    },
+    "app.js": [
+      "../lib/bignumber.js",
+      "../lib/ethereumjs-tx.js",
+      "../lib/ethereumjs-accounts.js",
+      "blockapps-web3.js"
+    ],
+    "index.html": "index.html"
+  },
+  "deploy": [
+    "Example"
+  ],
+  "provider": "./lib/truffle-provider.js"
+}
