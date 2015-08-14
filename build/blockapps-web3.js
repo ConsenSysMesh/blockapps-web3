@@ -78,8 +78,8 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
       // filters. Thankfully, the block hashes in block filters don't usually matter.
 
       // Here's what the code should be once stablenet starts acting like a real network:
-      // this.provider.requestFromBlockApps("/query/block?number=" + (block_number + 1), ...)
-      this.provider.requestFromBlockApps("/query/block?number=" + block_number, (function(_this) {
+      // this.provider.requestFromBlockApps("/block?number=" + (block_number + 1), ...)
+      this.provider.requestFromBlockApps("/block?number=" + block_number, (function(_this) {
         return function(err, block_result) {
           var block;
           if (err != null) {
@@ -110,7 +110,9 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
       // accounts is an object returned from ethereumjs-accounts
       // i.e., accounts = accounts.get(). Key is the address, value is the account info.
       this.accounts = options.accounts || [];
-      this.host = options.host || "http://stablenet.blockapps.net";
+      this.host = options.host || "http://hacknet.blockapps.net";
+      this.version = options.version || "v1.0";
+      this.blockchain = options.blockchain || "eth"
       this.verbose = options.verbose || false;
       this.gasPrice = options.gasPrice || 1000000000000;
       this.keyprovider = options.keyprovider || function() {
@@ -230,7 +232,12 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         };
       })(this);
       method = params != null ? "POST" : "GET";
-      request.open(method, "" + this.host + path, true);
+
+      var url = this.host + "/" + this.blockchain + "/" + this.version + path;
+
+      console.log(url);
+
+      request.open(method, url, true);
       request.setRequestHeader("Content-type", contentType);
       final_params = null;
       if (contentType === "application/x-www-form-urlencoded") {
@@ -247,7 +254,7 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         final_params = JSON.stringify(params);
       }
       if (this.verbose) {
-        console.log("BLOCKAPPS REQUEST:\n" + method + " " + this.host + path + " - " + final_params + " - " + contentType + "\n");
+        console.log("BLOCKAPPS REQUEST:\n" + method + " " + url + " - " + final_params + " - " + contentType + "\n");
       }
       try {
         if ((final_params != null) && final_params !== "") {
@@ -293,7 +300,7 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
     // for many transaction-related calls.
     BlockAppsWeb3Provider.prototype.requestTransactionData = function(tx_hash, callback) {
       tx_hash = this.strip0x(tx_hash);
-      this.requestFromBlockApps("/query/transaction?hash=" + tx_hash, (function(_this) {
+      this.requestFromBlockApps("/transaction?hash=" + tx_hash, (function(_this) {
         return function(err, tx_result) {
           var tx;
           if (err != null) {
@@ -307,7 +314,7 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
           tx = tx_result[0];
 
           // Get the block so we can get information about the transaction.
-          return _this.requestFromBlockApps("/query/block?number=" + tx.blockNumber, function(err, block_result) {
+          return _this.requestFromBlockApps("/block?number=" + tx.blockNumber, function(err, block_result) {
             var block;
             if (err != null) {
               callback(err);
@@ -354,14 +361,14 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
     };
 
     BlockAppsWeb3Provider.prototype.eth_blockNumber = function(callback) {
-      this.requestFromBlockApps("/query/block/last/1", function(err, response) {
+      this.requestFromBlockApps("/block/last/1", function(err, response) {
         var block;
         if (err != null) {
           callback(err);
           return;
         }
         if (response.length === 0) {
-          throw new Error("Couldn't find last block at /query/block/last/1. Please make ensure BlockApps is running properly.");
+          throw new Error("Couldn't find last block at /block/last/1. Please make ensure BlockApps is running properly.");
         }
         block = response[0];
         return callback(null, web3.fromDecimal(block.blockData.number));
@@ -375,7 +382,7 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
       address = this.strip0x(address);
 
       // TODO: Follow `next` pages, if any. Not implemented because I haven't seen any.
-      this.requestFromBlockApps("/query/transaction?address=" + address, function(err, result) {
+      this.requestFromBlockApps("/transaction?address=" + address, function(err, result) {
         if (err != null) {
           callback(err);
           return;
@@ -430,7 +437,7 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         block_number = "latest";
       }
       address = this.strip0x(address);
-      this.requestFromBlockApps("/query/block?address=" + address, function(err, response) {
+      this.requestFromBlockApps("/block?address=" + address, function(err, response) {
         if (err != null) {
           callback(err);
           return;
@@ -450,7 +457,7 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
       contract_address = this.strip0x(contract_address);
 
       // Treat the contract address as an account
-      this.requestFromBlockApps("/query/account?address=" + contract_address, function(err, response) {
+      this.requestFromBlockApps("/account?address=" + contract_address, function(err, response) {
         if (err != null) {
           callback(err);
           return;
@@ -513,7 +520,7 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         callback(new Error("'from' not found, is required"));
         return;
       }
-      this.requestFromBlockApps("/query/account?address=" + (this.strip0x(tx.from)), (function(_this) {
+      this.requestFromBlockApps("/account?address=" + (this.strip0x(tx.from)), (function(_this) {
         return function(err, response) {
           var nonce, rawTx, transaction;
           if (err != null) {
@@ -581,7 +588,7 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
       if (ttx.to.length !== 0) {
         js.to = ttx.to.toString('hex');
       }
-      this.requestFromBlockApps("/includetransaction", js, "application/json", function(err, tx_response) {
+      this.requestFromBlockApps("/transaction", js, "application/json", function(err, tx_response) {
         var tx_hash;
         tx_hash = "0x" + tx_response.replace(/.*=/, "");
         return callback(null, tx_hash);
@@ -713,7 +720,7 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
     };
 
     BlockAppsWeb3Provider.prototype.eth_gasPrice = function(callback) {
-      this.requestFromBlockApps("/query/transaction/last/1", function(err, tx_result) {
+      this.requestFromBlockApps("/transaction/last/1", function(err, tx_result) {
         var tx;
         if (err != null) {
           callback(err);
