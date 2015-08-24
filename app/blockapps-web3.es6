@@ -1,16 +1,16 @@
 // NOTE: This has been converted from CoffeeScript using http://js2.coffee
 // Some code can be made more clear as a result. I'd encourage contributions. :)
 
-var EthTx, factory;
+var EthTx;
 
-factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
-  var BlockAppsWeb3Provider, BlockFilter;
-  BlockFilter = (function() {
-    function BlockFilter(provider) {
+var factory = function(web3, HookedWeb3Provider, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
+
+  class BlockFilter {
+    constructor(provider) {
       this.provider = provider;
     }
 
-    BlockFilter.prototype.initialize = function(callback) {
+    initialize(callback) {
       if (this.provider.verbosity >= 1) console.log("   BlockFilter.initialize");
       var self = this;
       this.provider.eth_blockNumber(function(err, number) {
@@ -21,9 +21,9 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         self.block_number = web3.toDecimal(number);
         callback();
       });
-    };
+    }
 
-    BlockFilter.prototype.getChanges = function(callback) {
+    getChanges(callback) {
       if (this.provider.verbosity >= 1) console.log("   BlockFilter.getChanges");
       var self = this;
       this.provider.eth_blockNumber(function(err, finish_number) {
@@ -34,9 +34,9 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         finish_number = web3.toDecimal(finish_number);
         self.getBlockHashesRecursively([], self.block_number, finish_number + 1, callback);
       });
-    };
+    }
 
-    BlockFilter.prototype.getBlockHashesRecursively = function(hashes, current_number, finish_number, callback) {
+    getBlockHashesRecursively(hashes, current_number, finish_number, callback) {
       if (this.provider.verbosity >= 1) console.log("   BlockFilter.getBlockHashesRecursively");
       var self = this;
       this.getBlockHash(current_number, function(err, hash) {
@@ -53,9 +53,9 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         }
         self.getBlockHashesRecursively(hashes, current_number + 1, finish_number, callback);
       });
-    };
+    }
 
-    BlockFilter.prototype.getBlockHash = function(block_number, callback) {
+    getBlockHash(block_number, callback) {
       if (this.provider.verbosity >= 1) console.log("   BlockFilter.getBlockHash");
 
       // Request the next block so we can get the parent hash.
@@ -95,89 +95,124 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
           callback(null, "0x" + block.blockData.parentHash);
         };
       })(this));
-    };
+    }
+  };
 
-    return BlockFilter;
-  })();
-
-  BlockAppsWeb3Provider = (function() {
-    function BlockAppsWeb3Provider(options) {
+  class BlockAppsWeb3Provider extends HookedWeb3Provider {
+    constructor(options) {
       if (options == null) {
         options = {};
       }
+
+      super({host: options.host, transaction_signer: options.transaction_signer});
+
       this.coinbase = options.coinbase;
+
+      if (this.coinbase.indexOf("0x") < 0) {
+        this.coinbase = "0x" + this.coinbase;
+      }
 
       // accounts is an object returned from ethereumjs-accounts
       // i.e., accounts = accounts.get(). Key is the address, value is the account info.
       this.accounts = options.accounts || [];
+
+      for (var [index, account] of Object.entries(this.accounts)) {
+        if (account.indexOf("0x") < 0) {
+          this.accounts[index] = "0x" + account;
+        }
+      }
+
       this.host = options.host || "http://hacknet.blockapps.net";
       this.version = options.version || "v1.0";
       this.blockchain = options.blockchain || "eth"
       this.verbosity = options.verbosity || 0;
       this.gasPrice = options.gasPrice || 1000000000000;
-      this.keyprovider = options.keyprovider || function() {
+      this.transaction_signer = options.transaction_signer || function() {
         throw new Error("No key provider given to BlockApps + Web3. Can't send transaction.");
       };
       this.filter_index = 0;
       this.filters = {};
     }
 
-    BlockAppsWeb3Provider.prototype.send = function(payload) {
-      console.log("Called send!-----------------------")
+    send(payload) {
       throw new Error("BlockAppsWeb3Provider does not support synchronous methods. Please provide a callback.");
-    };
+    }
 
     // sendAsync acts as the director with which we call blockapps functions based
     // on RPC functions, and then wrap up the result to look like a JSON rpc response.
     // This is our hook into web3 -- all the other functions support this one.
-    BlockAppsWeb3Provider.prototype.sendAsync = function(payload, callback) {
-      if (payload instanceof Array) {
-        this.processBatchRequest(payload, callback);
-      } else {
-        this.processSingleRequest(payload, callback);
-      }
-    };
+    sendAsync(payload, callback) {
+      var self = this;
+      var finishedWithRewrite = function(err) {
+        if (err != null) {
+          return callback(err);
+        }
 
-    BlockAppsWeb3Provider.prototype.processSingleRequest = function(payload, callback) {
-      var args, fn, j, len, method, param, ref;
-      method = payload.method;
+        if (payload instanceof Array) {
+          self.processBatchRequest(payload, callback);
+        } else {
+          self.processSingleRequest(payload, callback);
+        }
+      };
+
+      var requests = payload;
+
+      if (!(payload instanceof Array)) {
+        requests = [payload];
+      }
+
+      this.rewritePayloads(0, requests, {}, finishedWithRewrite);
+    }
+
+    processSingleRequest(payload, callback) {
+      var method = payload.method;
 
       if (this[method] == null) {
         callback(new Error("BlockAppsWeb3Provider does not yet support the Web3 method '" + method + "'."));
         return;
       }
-      args = [];
-      ref = payload.params || [];
-      for (j = 0, len = ref.length; j < len; j++) {
-        param = ref[j];
-        args.push(param);
+
+      var args = [];
+      var params = payload.params || [];
+      for (var i = 0; i < params.length; i++) {
+        args.push(params[i]);
       }
 
       // Push a callback function to wrap up the response into
       // what web3 expects.
       args.push(function(err, result) {
-        var wrapped;
-        wrapped = {
+        var wrapped = {
           id: payload.id,
           jsonrpc: payload.jsonrpc,
-          result: result
         };
-        callback(err, wrapped);
+
+        if (err != null) {
+          wrapped.error = err.stack;
+        } else {
+          wrapped.result = result;
+        }
+
+        callback(null, wrapped);
       });
-      fn = this[method];
+
+      var fn = this[method];
       if (fn.length !== args.length) {
         callback(new Error("Invalid number of parameters passed to " + method));
         return;
       }
+
       fn.apply(this, args);
-    };
+    }
 
     // Process batch requests in series.
-    BlockAppsWeb3Provider.prototype.processBatchRequest = function(batch, callback) {
+    processBatchRequest(batch, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.processBatchRequest");
-      var current_index = 0;
-      var results = [];
-      var self = this;
+
+      var clone = [];
+
+      for (var i = 0; i < batch.length; i++) {
+        clone.push(batch[i]);
+      }
 
       if (this.verbosity >= 1) {
         var output = "batch start: ";
@@ -187,27 +222,22 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         console.log(output);
       }
 
-      var makeNextRequest = function() {
-        self.processSingleRequest(batch[current_index], function(err, result) {
-          if (err != null) {
-            callback(err);
-            return;
-          }
-          results.push(result);
-          current_index += 1;
-          if (current_index >= batch.length - 1) {
-            callback(null, results);
-            return;
-          } else {
-            makeNextRequest();
-          }
-        });
-      };
-      makeNextRequest();
-    };
+      this.makeBatchRequests(0, clone, [], callback);
+    }
+
+    makeBatchRequests(current_index, batch, results, finished) {
+      if (current_index >= batch.length) {
+        return finished(null, results);
+      }
+
+      this.processSingleRequest(batch[current_index], (err, r) => {
+        results.push(r);
+        this.makeBatchRequests(current_index + 1, batch, results, finished);
+      });
+    }
 
     // Make the actual requests to the BlockApps backend.
-    BlockAppsWeb3Provider.prototype.requestFromBlockApps = function(path, params, contentType, callback) {
+    requestFromBlockApps(path, params, contentType, callback) {
       var error, final_params, key, method, request, value;
       if (typeof params === "function") {
         callback = params;
@@ -281,12 +311,12 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         // callback errors.InvalidConnection(@host)
         return callback(error);
       }
-    };
+    }
 
     // Right now, "/transactionResult" outputs errors in such a nasty
     // way that we need a function to encapsulate error handling so as
     // not to have duplication.
-    BlockAppsWeb3Provider.prototype.requestTransactionResult = function(tx_hash, callback) {
+    requestTransactionResult(tx_hash, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.requestTransactionResult");
       tx_hash = this.strip0x(tx_hash);
       this.requestFromBlockApps("/transactionResult/" + tx_hash, (function(_this) {
@@ -308,11 +338,11 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
           return callback(null, txinfo);
         };
       })(this));
-    };
+    }
 
     // We have to make three requests to get all the data we need
     // for many transaction-related calls.
-    BlockAppsWeb3Provider.prototype.requestTransactionData = function(tx_hash, callback) {
+    requestTransactionData(tx_hash, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.requestTransactionData");
 
       tx_hash = this.strip0x(tx_hash);
@@ -353,30 +383,30 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
           });
         };
       })(this));
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.strip0x = function(string) {
+    strip0x(string) {
       if (string == null) {
         return string;
       }
       return string.replace("0x", "");
-    };
+    }
 
     //////////////////////////// Web3 Methods ////////////////////////////
 
-    BlockAppsWeb3Provider.prototype.eth_coinbase = function(callback) {
+    eth_coinbase(callback) {
       if (this.coinbase == null) {
         return callback(new Error("No coinbase specified in the BlockApps + Web3 provider!"));
       } else {
         return callback(null, this.coinbase);
       }
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_accounts = function(callback) {
+    eth_accounts(callback) {
       return callback(null, this.accounts);
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_blockNumber = function(callback) {
+    eth_blockNumber(callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_blockNumber");
       this.requestFromBlockApps("/block/last/1", function(err, response) {
         var block;
@@ -390,25 +420,77 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         block = response[0];
         return callback(null, web3.fromDecimal(block.blockData.number));
       });
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_getTransactionCount = function(address, block_number, callback) {
+    eth_getBlockByNumber(number, fullTransactions, callback) {
+      if (typeof fullTransactions == "function") {
+        callback = fullTransactions;
+        fullTransactions = false;
+      }
+
+      var block_number = new BigNumber(number, 16);
+
+      this.requestFromBlockApps(`/block?number=${block_number.toString(10)}`, (err, result) => {
+        if (err != null) {
+          return callback(err);
+        }
+
+        var block = result[result.length - 1];
+        var blockData = block.blockData;
+
+        var returnVal = {
+          number: web3.fromDecimal(blockData.number),
+          hash: "0x" + blockData.parentHash, // TODO: Get the real hash.
+          parentHash: "0x" + blockData.parentHash,
+          nonce: web3.fromDecimal(blockData.nonce),
+          sha3Uncles: "0x" + blockData.unclesHash,
+          logsBloom: "0x0", // TODO: Get the real logsBloom from somewhere.
+          transactionsRoot: "0x" + blockData.transactionsRoot,
+          stateRoot: "0x" + blockData.stateRoot,
+          miner: "0x0", // TODO: Get the real miner from somewhere.
+          difficulty: web3.fromDecimal(blockData.difficulty),
+          totalDifficulty: web3.fromDecimal(blockData.difficulty), // TODO: Is this actually right?
+          extraData: "0x" + blockData.extraData, // TODO: Is this right?
+          size: "0x0", // TODO: Get the real size from somewhere
+          gasLimit: web3.fromDecimal(blockData.gasLimit),
+          gasUsed: web3.fromDecimal(blockData.gasUsed),
+          timestamp: web3.fromDecimal(new Date(blockData.timestamp).getTime()) // TODO: Verify this is right.
+        };
+
+        if (fullTransactions == true) {
+          returnVal.transactions = block.receiptTransactions;
+        } else {
+          returnVal.transactions = block.receiptTransactions.map(function(t) {
+            return "0x" + t.hash;
+          });
+        }
+
+        returnVal.uncles = block.blockUncles.map(function(u) {
+          return "0x" + u.hash;
+        });
+
+        callback(null, returnVal);
+      });
+    }
+
+    eth_getTransactionCount(address, block_number, callback) {
       if (block_number == null) {
         block_number = "latest";
       }
       address = this.strip0x(address);
 
-      // TODO: Follow `next` pages, if any. Not implemented because I haven't seen any.
-      this.requestFromBlockApps("/transaction?address=" + address, function(err, result) {
+      this.requestFromBlockApps("/account?address=" + address, function(err, result) {
         if (err != null) {
           callback(err);
           return;
         }
-        return callback(null, result.length);
-      });
-    };
 
-    BlockAppsWeb3Provider.prototype.eth_getTransactionByHash = function(tx_hash, callback) {
+        var last = result[result.length - 1]
+        return callback(null, web3.fromDecimal(last.nonce));
+      });
+    }
+
+    eth_getTransactionByHash(tx_hash, callback) {
       this.requestTransactionData(tx_hash, function(err, tx, block, txinfo) {
         var i, index, j, len, ref, returnVal, transaction;
         if (err != null) {
@@ -445,29 +527,31 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         }
         return callback(null, returnVal);
       });
-    };
+    }
 
     // Only support the latest block_number for now.
     // TODO: Support block numbers with eth_getBalance
-    BlockAppsWeb3Provider.prototype.eth_getBalance = function(address, block_number, callback) {
+    eth_getBalance(address, block_number, callback) {
       if (block_number == null) {
         block_number = "latest";
       }
       address = this.strip0x(address);
-      this.requestFromBlockApps("/block?address=" + address, function(err, response) {
+      this.requestFromBlockApps("/account?address=" + address, function(err, response) {
         if (err != null) {
           callback(err);
           return;
         }
         if (response.length === 0) {
-          callback(null, 0);
+          callback(null, "0x0");
           return;
         }
-        callback(null, response[response.length - 1].balance);
-      });
-    };
 
-    BlockAppsWeb3Provider.prototype.eth_getCode = function(contract_address, block_number, callback) {
+        var balance = new BigNumber(response[response.length - 1].balance);
+        callback(null, "0x" + balance.toString(16));
+      });
+    }
+
+    eth_getCode(contract_address, block_number, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_getCode");
 
       if (block_number == null) {
@@ -487,13 +571,13 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         }
         callback(null, "0x" + response[response.length - 1].code);
       });
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_getCompilers = function(callback) {
+    eth_getCompilers(callback) {
       callback(null, ["solidity"]);
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_compileSolidity = function(src, callback) {
+    eth_compileSolidity(src, callback) {
       if (src == null) {
         src = "";
       }
@@ -505,6 +589,12 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
           callback(err);
           return;
         }
+
+        if (response.error != null) {
+          callback(new Error(response.error));
+          return;
+        }
+
         returnVal = {};
         ref = response.contracts;
         for (index = j = 0, len = ref.length; j < len; index = ++j) {
@@ -529,74 +619,28 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         }
         callback(null, returnVal);
       });
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_sendTransaction = function(tx, callback) {
-      if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_sendTransaction");
+    // Keep eth_sendTransaction so we can send a nice error.
+    eth_sendTransaction(tx, callback) {
+      return callback(new Error("BlockAppsWeb3 provider can't send transactions from addresses that aren't managed by the transaction signer. Make sure your transaction signer manages this account before sendint a transaction. Account: " + tx.from));
+    }
 
-      if (tx == null) {
-        tx = {};
-      }
-      if (tx.from == null) {
-        callback(new Error("'from' not found, is required"));
-        return;
-      }
-      this.requestFromBlockApps("/account?address=" + (this.strip0x(tx.from)), (function(_this) {
-        return function(err, response) {
-          var nonce, rawTx, transaction;
-          if (err != null) {
-            callback(err);
-            return;
-          }
-          if (response.length >= 1) {
-            nonce = response[response.length - 1].nonce;
-          } else {
-            nonce = 0;
-          }
-          rawTx = {
-            nonce: web3.fromDecimal(nonce),
-            gasPrice: _this.strip0x(web3.fromDecimal(tx.gasPrice || _this.gasPrice)),
-            gasLimit: _this.strip0x(web3.fromDecimal(tx.gasLimit || 1900000)),
-            value: _this.strip0x(web3.fromDecimal(tx.value || 0)),
-            data: '00'
-          };
-          if (tx.to != null) {
-            rawTx.to = _this.strip0x(tx.to);
-          }
-          if (tx.data != null) {
-            rawTx.data = _this.strip0x(tx.data);
-          }
-          rawTx.from = _this.strip0x(tx.from);
-          transaction = new EthTx(rawTx);
-          return _this.keyprovider(rawTx.from, function(err, unencrypted_private_key) {
-            var private_key, serializedTx;
-            if (err != null) {
-              callback(err);
-              return;
-            }
-            private_key = new Buffer(_this.strip0x(unencrypted_private_key), 'hex');
-            transaction.sign(private_key);
-            serializedTx = transaction.serialize().toString('hex');
-            return _this.eth_sendRawTransaction(serializedTx, callback);
-          });
-        };
-      })(this));
-    };
-
-    BlockAppsWeb3Provider.prototype.eth_sendRawTransaction = function(rawTx, callback) {
+    eth_sendRawTransaction(rawTx, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_sendRawTransaction");
 
-      var bigValue, js, rawString, ttx;
-      ttx = new EthTx(new Buffer(rawTx, 'hex'));
+      rawTx = this.strip0x(rawTx);
+      var ttx = new EthTx(new Buffer(rawTx, 'hex'));
+
       BigNumber.config({
         EXPONENTIAL_AT: 20000000
       });
-      rawString = ttx.value.toString('hex');
-      bigValue = new BigNumber(0);
+      var rawString = ttx.value.toString('hex');
+      var bigValue = new BigNumber(0);
       if (rawString !== '') {
         bigValue = new BigNumber(rawString, 16);
       }
-      js = {
+      var js = {
         from: ttx.getSenderAddress().toString('hex'),
         nonce: ethUtil.bufferToInt(ttx.nonce),
         gasPrice: ethUtil.bufferToInt(ttx.gasPrice),
@@ -616,54 +660,51 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         tx_hash = "0x" + tx_response.replace(/.*=/, "");
         return callback(null, tx_hash);
       });
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_call = function(tx, block_number, callback) {
+    eth_call(tx, block_number, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_call");
 
-      if (tx == null) {
-        tx = {};
-      }
-      if (block_number == null) {
-        block_number = "latest";
-      }
-      this.eth_sendTransaction(tx, (function(_this) {
-        return function(err, tx_hash) {
-          var attempt, attempts, interval, maxAttempts;
-          if (err != null) {
-            callback(err);
-            return;
-          }
-          tx_hash = _this.strip0x(tx_hash);
-          attempts = 0;
-          maxAttempts = 5;
-          interval = null;
-          attempt = function() {
-            attempts += 1;
+      this.sendAsync({
+        jsonrpc: '2.0',
+        method: 'eth_sendTransaction',
+        params: [tx],
+        id: (new Date()).getTime()
+      }, (err, result) => {
+        if (err != null) {
+          callback(err);
+          return;
+        }
 
-            // Ensure the contract was actually created.
-            return _this.requestTransactionResult(tx_hash, function(err, txinfo) {
-              if (err != null) {
-                callback(err, txinfo);
-                return;
-              }
-              if ((txinfo != null) && (txinfo.response != null)) {
-                clearInterval(interval);
-                callback(null, web3.toHex(txinfo.response));
-              }
-              if (attempts >= maxAttempts) {
-                clearInterval(interval);
-                return callback("Couldn't get call() return value after " + attempts + " attempts.");
-              }
-            });
-          };
-          interval = setInterval(attempt, 1000);
-          return attempt();
+        var tx_hash = this.strip0x(result.result);
+
+        var attempts = 0;
+        var maxAttempts = 100;
+        var interval = null;
+        var attempt = () => {
+          attempts += 1;
+
+          this.requestTransactionResult(tx_hash, function(err, txinfo) {
+            if (err != null) {
+              callback(err, txinfo);
+              return;
+            }
+            if ((txinfo != null) && (txinfo.response != null)) {
+              clearInterval(interval);
+              callback(null, "0x" + txinfo.response);
+            }
+            if (attempts >= maxAttempts) {
+              clearInterval(interval);
+              return callback("Couldn't get call() return value after " + attempts + " attempts.");
+            }
+          });
         };
-      })(this));
-    };
+        interval = setInterval(attempt, 1000);
+        return attempt();
+      });
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_getTransactionReceipt = function(tx_hash, callback) {
+    eth_getTransactionReceipt(tx_hash, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_getTransactionReceipt");
       this.requestTransactionData(tx_hash, function(err, tx, block, txinfo) {
         var expected_address, i, index, j, len, ref, returnVal, transaction;
@@ -712,9 +753,9 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         returnVal.contractAddress = "0x" + expected_address;
         return callback(err, returnVal);
       });
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_newBlockFilter = function(callback) {
+    eth_newBlockFilter(callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_newBlockFilter");
       var self = this;
       var filter = new BlockFilter(this);
@@ -728,9 +769,9 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         self.filters[self.filter_index] = filter;
         callback(null, web3.fromDecimal(self.filter_index));
       });
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_uninstallFilter = function(filter_id, callback) {
+    eth_uninstallFilter(filter_id, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_uninstallFilter");
       // var filter;
       // filter_id = web3.toDecimal(filter_id);
@@ -743,9 +784,9 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
       // callback(null, true);
       // console.log("asfdads");
       callback(null, true);
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_getFilterChanges = function(filter_id, callback) {
+    eth_getFilterChanges(filter_id, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_getFilterChanges");
       var filter;
       filter_id = web3.toDecimal(filter_id);
@@ -755,9 +796,9 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         return;
       }
       return filter.getChanges(callback);
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.eth_gasPrice = function(callback) {
+    eth_gasPrice(callback) {
       if (this.provider.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_gasPrice");
       this.requestFromBlockApps("/transaction/last/1", function(err, tx_result) {
         var tx;
@@ -772,26 +813,22 @@ factory = function(web3, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
         tx = tx_result[0];
         return callback(null, web3.fromDecimal(tx.gasPrice));
       });
-    };
+    }
 
-    BlockAppsWeb3Provider.prototype.web3_clientVersion = function(callback) {
+    web3_clientVersion(callback) {
       return callback(null, "BlockApps Web3 Provider/0.0.1/JavaScript");
-    };
+    }
+  };
 
-    return BlockAppsWeb3Provider;
-
-  })();
   return BlockAppsWeb3Provider;
 };
 
 // Note, EthTx, Buffer, ethUtil are provided by the ethereumjs-tx module.
 // In node, it globals Buffer and ethUtil; in the browser, it also globals EthTx.
-if ((typeof module !== "undefined" && module !== null) && (module.exports != null)) {
+var m = module || undefined;
+if (m != null && m.exports != null) {
   EthTx = require("ethereumjs-tx");
-  module.exports = factory(require("web3"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil);
+  module.exports = factory(require("web3"), require("hooked-web3-provider"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil);
 } else {
-  window.BlockAppsWeb3Provider = factory(window.web3, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil);
+  window.BlockAppsWeb3Provider = factory(window.web3, window.HookedWeb3Provider, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil);
 }
-
-// ---
-// generated by coffee-script 1.9.2

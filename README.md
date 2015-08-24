@@ -1,8 +1,8 @@
 # BlockApps + Web3
 
-This package provides a web3 provider for the BlockApps backend. This is not a wrapper around web3, so when using BlockApps + Web3, you must still include web3 in your project.
+This package provides a web3 provider for the BlockApps backend, built on top of the [Hooked Web3 Provider](https://github.com/ConsenSys/hooked-web3-provider). It allows you to use BlockApps easily in a primarily web3-based project.
 
-You can see an example of the provider in action by opening `index.html`.
+This is not a wrapper around web3, so when using BlockApps + Web3, you must still include web3 in your project.
 
 **IMPORTANT NOTE**: due to a current limitation of BlockApps at the time of this writing, `eth_call` requests cost Ether, and are treated just like transactions sent via `eth_sendTransaction`. Please take this into account when choosing to use BlockApps as a backend for your app.
 
@@ -29,6 +29,8 @@ Browser:
 
 Note that to avoid dependency coupling, you must include [BigNumber](https://github.com/MikeMcl/bignumber.js/), [ethereumjs-tx](https://github.com/ethereum/ethereumjs-tx), and [web3](https://github.com/ethereum/web3.js) on your own when using BlockApps-Web3 in the browser. Those three dependencies **must** be included in the browser before including the `blockapps-web3.js` script.
 
+**Note:** `ethereumjs-tx` will eventually be removed as a dependency once BlockApps is able to process raw transactions server side.
+
 ### To Use:
 
 ```
@@ -44,31 +46,10 @@ Then use web3 like normal!
 
 The `BlockAppsWeb3Provider` constructor takes a single parameter with the following keys:
 
-* `keyprovider`: `function(address, callback)` - used for translating addresses into their associated private keys. You **must** pass a keyprovider function if you want to use `eth_sendTransaction` and `eth_call`.
+* `transaction_signer`: See [Hooked Web3 Provider](https://github.com/ConsenSys/hooked-web3-provider). `BlockAppsWeb3Provider` is an extension of the HookedWeb3Provider, using a separate service for signing transactions.
 * `coinbase`: `string` - the coinbase address associated with `eth_coinbase`. You only need to specify this value if your app will call `eth_coinbase` via web3.
 * `accounts`: `array` - the addresses associated with this provider. You only need to specify this value if your app will call `eth_accounts` via web3.
-* `host`: `string` - location of the BlockApps server this provider will point to. Defaults to `http://stablenet.blockapps.net`
-
-### Writing your Key Provider
-
-In order for the BlockAppsWeb3Provider to reduce dependencies and stay implementation neutral, it does not manage and save addresses and their associated private keys. In order to sign transactions and send them to BlockApps, however, the provider must have a way of getting an address's unencrypted private key -- this is the role of the key provider.
-
-If you don't have a library in mind for managing your app's addresses and private keys for your users, we recommend [ethereumjs-accounts](https://github.com/SilentCicero/ethereumjs-accounts). Here's an example key provider using ethereumjs-accounts:
-
-```
-var provider = new BlockAppsWeb3Provider({
-  keyprovider: function(address, callback) {
-    var passphrase = prompt("Please enter your password.");
-    var account = accounts.get(address, passphrase);
-    
-    if (account.locked == true) {
-      callback(new Error("Invalid password!"));
-    } else {
-      callback(null, account.private);
-    }
-  }
-});
-```
+* `host`: `string` - location of the BlockApps server this provider will point to. Defaults to `http://hacknet.blockapps.net` (for now)
 
 
 ### Implemented Methods
@@ -78,14 +59,15 @@ The following lists the currently implemented methods. Some methods have restric
 * `eth_coinbase`
 * `eth_accounts`
 * `eth_blockNumber`
+* `eth_getBlockByNumber` (does not support "pending"; partially implemented, needs work)
 * `eth_call`
 * `eth_sendTransaction`
 * `eth_sendRawTransaction`
 * `eth_getCompilers`
 * `eth_compileSolidity`
-* `eth_getCode` (only supports block number “latest”)
+* `eth_getCode` (does not support "pending")
 * `eth_getBalance`
-* `eth_getTransactionCount` (only supports block number “latest”)
+* `eth_getTransactionCount` (does not support "pending")
 * `eth_getTransactionByHash`
 * `eth_getTransactionReceipt`
 * `eth_newBlockFilter`
@@ -93,26 +75,30 @@ The following lists the currently implemented methods. Some methods have restric
 * `eth_uninstallFilter`
 * `web3_clientVersion`
 
-### Developing
+### Developing & Contributing
 
-BlockApps + Web3 uses `grunt` to concatenate files and produce its distributable source files (`./build/blockapps-web3.js` and `./build/blockapps-web3.js`).
-
-To concatenate files and dependencies (this will create/overwrite `./build/blockapps-web3.js`): 
+BlockApps + Web3 uses `truffle` to manage all parts of the project. First install `truffle` if you haven't already:
 
 ```
-$ grunt
+$ npm install -g truffle
 ```
 
-To concatenate as well as minify (this will create/overwrite both `./build/blockapps-web3.js` and `./build/blockapps-web3.min.js`):
+To build the distributable files in `./build`:
 
 ```
-$ grunt dist
+$ truffle build
 ```
 
-To have grunt automatically build `./build/blockapps-web3.js` during development do:
+To have truffle automatically build the distributable files during development on every save:
 
 ```
-$ grunt watch
+$ truffle watch
+```
+
+To run the automated tests:
+
+```
+$ truffle test
 ```
 
 
