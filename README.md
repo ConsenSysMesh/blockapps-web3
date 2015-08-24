@@ -4,7 +4,11 @@ This package provides a web3 provider for the BlockApps backend, built on top of
 
 This is not a wrapper around web3, so when using BlockApps + Web3, you must still include web3 in your project.
 
-**IMPORTANT NOTE**: due to a current limitation of BlockApps at the time of this writing, `eth_call` requests cost Ether, and are treated just like transactions sent via `eth_sendTransaction`. Please take this into account when choosing to use BlockApps as a backend for your app.
+**A couple considerations before using this library**: 
+
+1. BlockApps is currently in active development. Because of this, the web3 provider doesn't currently point to a server synced with the actual Ethereum network. This will change very soon. 
+
+1. In the same vein as the above, **all `eth_call` requests cost Ether**, and are treated just like transactions sent via `eth_sendTransaction`.
 
 ### Install
 
