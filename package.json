@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "A Web3 Provider for the BlockApps backend",
   "author": "Tim Coulter",
-  "main": "build/blockapps-web3.js",
+  "main": "index.js",
   "private": false,
   "repository": {
     "type": "git",
