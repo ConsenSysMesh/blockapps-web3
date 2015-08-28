@@ -825,8 +825,7 @@ var factory = function(web3, HookedWeb3Provider, XMLHttpRequest, BigNumber, EthT
 
 // Note, EthTx, Buffer, ethUtil are provided by the ethereumjs-tx module.
 // In node, it globals Buffer and ethUtil; in the browser, it also globals EthTx.
-var m = module || undefined;
-if (m != null && m.exports != null) {
+if (typeof module !== 'undefined') {
   EthTx = require("ethereumjs-tx");
   module.exports = factory(require("web3"), require("hooked-web3-provider"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil);
 } else {
