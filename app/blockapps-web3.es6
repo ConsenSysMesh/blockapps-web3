@@ -741,7 +741,7 @@ var factory = function(web3, HookedWeb3Provider, XMLHttpRequest, BigNumber, EthT
         if (tx.to != null) {
           returnVal.to = "0x" + tx.to;
         }
-        expected_address = ethUtil.generateAddress(tx.from, parseInt(tx.nonce + 1)).toString('hex');
+        expected_address = ethUtil.generateAddress(tx.from, parseInt(tx.nonce)).toString('hex');
 
         // If the VM trace doesn't include the expected address, then the
         // transaction hasn't been processed yet.

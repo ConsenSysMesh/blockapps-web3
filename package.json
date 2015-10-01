@@ -1,6 +1,6 @@
 {
   "name": "blockapps-web3",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A Web3 Provider for the BlockApps backend",
   "author": "Tim Coulter",
   "main": "build/blockapps-web3.js",
@@ -10,13 +10,13 @@
     "url": "https://github.com/consensys/blockapps-web3.git"
   },
   "dependencies": {
-    "web3": "*",
-    "xhr2": "*",
-    "hooked-web3-provider": "*"
+    "ethereumjs-tx": "^0.6.7",
+    "hooked-web3-provider": "0.0.3",
+    "web3": "^0.13.0",
+    "xhr2": "^0.1.3"
   },
   "devDependencies": {
     "request": "*",
-    "ethereumjs-tx": "*",
     "bignumber.js": "*"
   },
   "license": "MIT License. Copyright Consensys LLC, and authors. All rights reserved."
