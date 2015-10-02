@@ -3,7 +3,7 @@
 
 var EthTx;
 
-var factory = function(web3, HookedWeb3Provider, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
+var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
 
   class BlockFilter {
     constructor(provider) {
@@ -125,6 +125,8 @@ var factory = function(web3, HookedWeb3Provider, XMLHttpRequest, BigNumber, EthT
       this.host = options.host || "http://hacknet.blockapps.net";
       this.version = options.version || "v1.0";
       this.blockchain = options.blockchain || "eth"
+      var blockAppsUrlRoot = this.host + '/' + this.blockchain + '/' + this.version + '/'
+      this.vm = BlockAppsVm({ url: blockAppsUrlRoot });
       this.verbosity = options.verbosity || 0;
       this.gasPrice = options.gasPrice || 1000000000000;
       this.transaction_signer = options.transaction_signer || function() {
@@ -266,7 +268,7 @@ var factory = function(web3, HookedWeb3Provider, XMLHttpRequest, BigNumber, EthT
               if (typeof toPrint !== "string") {
                 toPrint = JSON.stringify(toPrint, null, 2);
               }
-              console.log("BLOCKAPPS RESPONSE:\n" + toPrint + "\n");
+              console.log("BLOCKAPPS RESPONSE:\n" + url + "\n\n" + toPrint + "\n");
             }
             callback(error, result);
           }
@@ -294,6 +296,7 @@ var factory = function(web3, HookedWeb3Provider, XMLHttpRequest, BigNumber, EthT
       }
       if (this.verbosity >= 3) {
         console.log("BLOCKAPPS REQUEST:");
+        // try{ throw new Error() } catch(err){ console.log(err.stack) }
       }
       if (this.verbosity >= 2) {
         console.log(method + " " + url + " - " + final_params + " - " + contentType);
@@ -662,46 +665,39 @@ var factory = function(web3, HookedWeb3Provider, XMLHttpRequest, BigNumber, EthT
       });
     }
 
-    eth_call(tx, block_number, callback) {
+    eth_call(txParams, block_number, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_call");
 
-      this.sendAsync({
-        jsonrpc: '2.0',
-        method: 'eth_sendTransaction',
-        params: [tx],
-        id: (new Date()).getTime()
-      }, (err, result) => {
-        if (err != null) {
-          callback(err);
-          return;
-        }
-
-        var tx_hash = this.strip0x(result.result);
-
-        var attempts = 0;
-        var maxAttempts = 100;
-        var interval = null;
-        var attempt = () => {
-          attempts += 1;
-
-          this.requestTransactionResult(tx_hash, function(err, txinfo) {
-            if (err != null) {
-              callback(err, txinfo);
-              return;
-            }
-            if ((txinfo != null) && (txinfo.response != null)) {
-              clearInterval(interval);
-              callback(null, "0x" + txinfo.response);
-            }
-            if (attempts >= maxAttempts) {
-              clearInterval(interval);
-              return callback("Couldn't get call() return value after " + attempts + " attempts.");
-            }
-          });
-        };
-        interval = setInterval(attempt, 1000);
-        return attempt();
+      var vm = this.vm
+      var tx = new EthTx({
+        to: txParams.to,
+        nonce: txParams.nonce || "0x00",
+        gasPrice: txParams.gasPrice || "0x01",
+        gasLimit: txParams.gas || "0xffffff",
+        value: txParams.value || "0x00", 
+        data: txParams.data || "0x"
       });
+
+      // manually set from b/c we are not signing it
+      tx.from = new Buffer(ethUtil.stripHexPrefix(txParams.from), "hex");
+
+      vm.stateManager.checkpoint();
+
+      vm.runTx({ tx: tx, skipNonce: true }, parseResults);
+
+      function parseResults(err, results) {
+        // console.log("---------------------------------------------------")
+        // console.log("results:\n", arguments)
+        // console.log("---------------------------------------------------")
+        if (err) return callback(err);
+        vm.stateManager.revert(function(err){
+          if (err) return callback(err);
+          vm.stateManager.resetNetworkCache();
+          var returnVal = "0x"+results.vm.return.toString("hex");
+          callback(null, returnVal);
+        });  
+      }
+
     }
 
     eth_getTransactionReceipt(tx_hash, callback) {
@@ -827,7 +823,7 @@ var factory = function(web3, HookedWeb3Provider, XMLHttpRequest, BigNumber, EthT
 // In node, it globals Buffer and ethUtil; in the browser, it also globals EthTx.
 if (typeof module !== 'undefined') {
   EthTx = require("ethereumjs-tx");
-  module.exports = factory(require("web3"), require("hooked-web3-provider"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil);
+  module.exports = factory(require("web3"), require("hooked-web3-provider"), require("blockapps-vm"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil);
 } else {
   window.BlockAppsWeb3Provider = factory(window.web3, window.HookedWeb3Provider, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil);
 }
