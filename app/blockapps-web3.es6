@@ -125,8 +125,6 @@ var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, Bi
       this.host = options.host || "http://hacknet.blockapps.net";
       this.version = options.version || "v1.0";
       this.blockchain = options.blockchain || "eth"
-      var blockAppsUrlRoot = this.host + '/' + this.blockchain + '/' + this.version + '/'
-      this.vm = BlockAppsVm({ url: blockAppsUrlRoot });
       this.verbosity = options.verbosity || 0;
       this.gasPrice = options.gasPrice || 1000000000000;
       this.transaction_signer = options.transaction_signer || function() {
@@ -137,6 +135,15 @@ var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, Bi
     }
 
     send(payload) {
+      switch (payload.method) {
+        case 'eth_accounts':
+          var response = {
+            id: payload.id,
+            jsonrpc: payload.jsonrpc,
+            result: this.accounts
+          };
+          return response
+      }
       throw new Error("BlockAppsWeb3Provider does not support synchronous methods. Please provide a callback.");
     }
 
@@ -488,8 +495,16 @@ var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, Bi
           return;
         }
 
-        var last = result[result.length - 1]
-        return callback(null, web3.fromDecimal(last.nonce));
+        var nonce
+
+        if (result.length) {
+          var last = result[result.length - 1]
+          nonce = web3.fromDecimal(last.nonce)
+        } else {
+          nonce = '0x00'
+        }
+
+        return callback(null, nonce);
       });
     }
 
@@ -643,6 +658,7 @@ var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, Bi
       if (rawString !== '') {
         bigValue = new BigNumber(rawString, 16);
       }
+
       var js = {
         from: ttx.getSenderAddress().toString('hex'),
         nonce: ethUtil.bufferToInt(ttx.nonce),
@@ -668,7 +684,9 @@ var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, Bi
     eth_call(txParams, block_number, callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_call");
 
-      var vm = this.vm
+      var blockAppsUrlRoot = this.host + '/' + this.blockchain + '/' + this.version + '/';
+      var vm = BlockAppsVm({ url: blockAppsUrlRoot });
+
       var tx = new EthTx({
         to: txParams.to,
         nonce: txParams.nonce || "0x00",
@@ -679,7 +697,8 @@ var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, Bi
       });
 
       // manually set from b/c we are not signing it
-      tx.from = new Buffer(ethUtil.stripHexPrefix(txParams.from), "hex");
+      var from = txParams.from || this.accounts[0];
+      tx.from = new Buffer(ethUtil.stripHexPrefix(from), "hex");
 
       vm.stateManager.checkpoint();
 
@@ -690,12 +709,9 @@ var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, Bi
         // console.log("results:\n", arguments)
         // console.log("---------------------------------------------------")
         if (err) return callback(err);
-        vm.stateManager.revert(function(err){
-          if (err) return callback(err);
-          vm.stateManager.resetNetworkCache();
-          var returnVal = "0x"+results.vm.return.toString("hex");
-          callback(null, returnVal);
-        });  
+        var returnVal = undefined;
+        if (results && results.vm.return) returnVal = "0x"+results.vm.return.toString("hex");
+        callback(null, returnVal);
       }
 
     }
@@ -751,6 +767,11 @@ var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, Bi
       });
     }
 
+    // blockapps does not index LOGs at this time
+    // eth_newFilter(args, callback) {
+    //   if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_newFilter");
+    // }
+
     eth_newBlockFilter(callback) {
       if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_newBlockFilter");
       var self = this;
@@ -795,7 +816,7 @@ var factory = function(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, Bi
     }
 
     eth_gasPrice(callback) {
-      if (this.provider.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_gasPrice");
+      if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_gasPrice");
       this.requestFromBlockApps("/transaction/last/1", function(err, tx_result) {
         var tx;
         if (err != null) {
