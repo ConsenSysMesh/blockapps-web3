@@ -17,7 +17,11 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 
 var EthTx;
 
-var factory = function factory(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
+var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
+
+  // Polyfill
+  ObjectEntries.shim();
+
   var BlockFilter = (function () {
     function BlockFilter(provider) {
       _classCallCheck(this, BlockFilter);
@@ -941,7 +945,7 @@ var factory = function factory(web3, HookedWeb3Provider, BlockAppsVm, XMLHttpReq
 // In node, it globals Buffer and ethUtil; in the browser, it also globals EthTx.
 if (typeof module !== 'undefined') {
   EthTx = require("ethereumjs-tx");
-  module.exports = factory(require("web3"), require("hooked-web3-provider"), require("blockapps-vm"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil);
+  module.exports = factory(require("object.entries"), require("web3"), require("hooked-web3-provider"), require("blockapps-vm"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil);
 } else {
-  window.BlockAppsWeb3Provider = factory(window.web3, window.HookedWeb3Provider, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil);
+  window.BlockAppsWeb3Provider = factory(window.ObjectEntries, window.web3, window.HookedWeb3Provider, window.BlockAppsVm, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil);
 }
