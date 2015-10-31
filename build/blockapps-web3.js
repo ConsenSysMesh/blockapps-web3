@@ -17,7 +17,7 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 
 var EthTx;
 
-var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
+var factory = function factory(ObjectEntries, HookedWeb3Provider, BlockAppsVm, XMLHttpRequest, BigNumber, EthTx, Buffer, ethUtil) {
 
   // Polyfill
   ObjectEntries.shim();
@@ -39,7 +39,7 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
             callback(err);
             return;
           }
-          self.block_number = web3.toDecimal(number);
+          self.block_number = toDecimal(number);
           callback();
         });
       }
@@ -53,7 +53,7 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
             callback(err);
             return;
           }
-          finish_number = web3.toDecimal(finish_number);
+          finish_number = toDecimal(finish_number);
           self.getBlockHashesRecursively([], self.block_number, finish_number + 1, callback);
         });
       }
@@ -506,7 +506,7 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
             throw new Error("Couldn't find last block at /block/last/1. Please make ensure BlockApps is running properly.");
           }
           block = response[0];
-          return callback(null, web3.fromDecimal(block.blockData.number));
+          return callback(null, fromDecimal(block.blockData.number));
         });
       }
     }, {
@@ -528,22 +528,22 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
           var blockData = block.blockData;
 
           var returnVal = {
-            number: web3.fromDecimal(blockData.number),
+            number: fromDecimal(blockData.number),
             hash: "0x" + blockData.parentHash, // TODO: Get the real hash.
             parentHash: "0x" + blockData.parentHash,
-            nonce: web3.fromDecimal(blockData.nonce),
+            nonce: fromDecimal(blockData.nonce),
             sha3Uncles: "0x" + blockData.unclesHash,
             logsBloom: "0x0", // TODO: Get the real logsBloom from somewhere.
             transactionsRoot: "0x" + blockData.transactionsRoot,
             stateRoot: "0x" + blockData.stateRoot,
             miner: "0x0", // TODO: Get the real miner from somewhere.
-            difficulty: web3.fromDecimal(blockData.difficulty),
-            totalDifficulty: web3.fromDecimal(blockData.difficulty), // TODO: Is this actually right?
+            difficulty: fromDecimal(blockData.difficulty),
+            totalDifficulty: fromDecimal(blockData.difficulty), // TODO: Is this actually right?
             extraData: "0x" + blockData.extraData, // TODO: Is this right?
             size: "0x0", // TODO: Get the real size from somewhere
-            gasLimit: web3.fromDecimal(blockData.gasLimit),
-            gasUsed: web3.fromDecimal(blockData.gasUsed),
-            timestamp: web3.fromDecimal(new Date(blockData.timestamp).getTime()) // TODO: Verify this is right.
+            gasLimit: fromDecimal(blockData.gasLimit),
+            gasUsed: fromDecimal(blockData.gasUsed),
+            timestamp: fromDecimal(new Date(blockData.timestamp).getTime()) // TODO: Verify this is right.
           };
 
           if (fullTransactions == true) {
@@ -579,7 +579,7 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
 
           if (result.length) {
             var last = result[result.length - 1];
-            nonce = web3.fromDecimal(last.nonce);
+            nonce = fromDecimal(last.nonce);
           } else {
             nonce = '0x00';
           }
@@ -611,14 +611,14 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
           }
           returnVal = {
             hash: "0x" + tx.hash,
-            nonce: web3.fromDecimal(tx.nonce),
+            nonce: fromDecimal(tx.nonce),
             blockHash: "0x" + txinfo.blockHash,
-            blockNumber: web3.fromDecimal(tx.blockNumber),
-            transactionIndex: web3.fromDecimal(index),
+            blockNumber: fromDecimal(tx.blockNumber),
+            transactionIndex: fromDecimal(index),
             from: "0x" + tx.from,
-            gasPrice: web3.fromDecimal(tx.gasPrice),
-            gas: web3.fromDecimal(block.blockData.gasUsed),
-            value: web3.fromDecimal(tx.value),
+            gasPrice: fromDecimal(tx.gasPrice),
+            gas: fromDecimal(block.blockData.gasUsed),
+            value: fromDecimal(tx.value),
             input: "0x" + tx.codeOrData
           };
           if (tx.to != null) {
@@ -832,12 +832,12 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
             }
           }
           returnVal = {
-            blockNumber: web3.fromDecimal(tx.blockNumber),
+            blockNumber: fromDecimal(tx.blockNumber),
             transactionHash: "0x" + tx.hash,
-            transactionIndex: web3.fromDecimal(index),
+            transactionIndex: fromDecimal(index),
             from: "0x" + tx.from,
-            cumulativeGasUsed: web3.fromDecimal(block.blockData.gasUsed),
-            gasUsed: web3.fromDecimal(0), // TODO: Make this right.
+            cumulativeGasUsed: fromDecimal(block.blockData.gasUsed),
+            gasUsed: fromDecimal(0), // TODO: Make this right.
             logs: [] // TODO: Is there anywhere to get these?
           };
           if (tx.to != null) {
@@ -876,7 +876,7 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
 
           self.filter_index += 1;
           self.filters[self.filter_index] = filter;
-          callback(null, web3.fromDecimal(self.filter_index));
+          callback(null, fromDecimal(self.filter_index));
         });
       }
     }, {
@@ -884,7 +884,7 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
       value: function eth_uninstallFilter(filter_id, callback) {
         if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_uninstallFilter");
         // var filter;
-        // filter_id = web3.toDecimal(filter_id);
+        // filter_id = toDecimal(filter_id);
         // filter = this.filters[filter_id];
         // if (filter == null) {
         //   callback(null, false);
@@ -900,7 +900,7 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
       value: function eth_getFilterChanges(filter_id, callback) {
         if (this.verbosity >= 1) console.log("   BlockAppsWeb3Provider.eth_getFilterChanges");
         var filter;
-        filter_id = web3.toDecimal(filter_id);
+        filter_id = toDecimal(filter_id);
         filter = this.filters[filter_id];
         if (filter == null) {
           callback(null, []);
@@ -923,7 +923,7 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
             return;
           }
           tx = tx_result[0];
-          return callback(null, web3.fromDecimal(tx.gasPrice));
+          return callback(null, fromDecimal(tx.gasPrice));
         });
       }
     }, {
@@ -945,7 +945,31 @@ var factory = function factory(ObjectEntries, web3, HookedWeb3Provider, BlockApp
 // In node, it globals Buffer and ethUtil; in the browser, it also globals EthTx.
 if (typeof module !== 'undefined') {
   EthTx = require("ethereumjs-tx");
-  module.exports = factory(require("object.entries"), require("web3"), require("hooked-web3-provider"), require("blockapps-vm"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil);
+  module.exports = factory(require("object.entries"), require("hooked-web3-provider"), require("blockapps-vm"), require("xhr2"), require("bignumber.js"), EthTx, Buffer, ethUtil);
 } else {
-  window.BlockAppsWeb3Provider = factory(window.ObjectEntries, window.web3, window.HookedWeb3Provider, window.BlockAppsVm, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil);
+  window.BlockAppsWeb3Provider = factory(window.ObjectEntries, window.HookedWeb3Provider, window.BlockAppsVm, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil);
 }
+
+function toDecimal(value) {
+  return toBigNumber(value).toNumber();
+};
+
+function toBigNumber(number) {
+  /*jshint maxcomplexity:5 */
+  number = number || 0;
+  if (isBigNumber(number)) return number;
+
+  if (isString(number) && (number.indexOf('0x') === 0 || number.indexOf('-0x') === 0)) {
+    return new BigNumber(number.replace('0x', ''), 16);
+  }
+
+  return new BigNumber(number.toString(10), 10);
+};
+
+function isBigNumber(object) {
+  return object instanceof BigNumber || object && object.constructor && object.constructor.name === 'BigNumber';
+};
+
+function isString(object) {
+  return typeof object === 'string' || object && object.constructor && object.constructor.name === 'String';
+};
