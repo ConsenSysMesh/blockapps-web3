@@ -852,6 +852,13 @@ if (typeof module !== 'undefined') {
   window.BlockAppsWeb3Provider = factory(window.ObjectEntries, window.HookedWeb3Provider, window.BlockAppsVm, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil);
 }
 
+function fromDecimal(value) {
+    var number = toBigNumber(value);
+    var result = number.toString(16);
+
+    return number.lessThan(0) ? '-0x' + result.substr(1) : '0x' + result;
+};
+
 function toDecimal(value) {
     return toBigNumber(value).toNumber();
 };
