@@ -16,7 +16,7 @@
     "bignumber.js": "^2.0.8",
     "blockapps-vm": "^2.1.0",
     "ethereumjs-tx": "0.6.7",
-    "hooked-web3-provider": "0.0.3",
+    "hooked-web3-provider": "^1.0.0",
     "object.entries": "^1.0.3",
     "xhr2": "0.1.3"
   },
