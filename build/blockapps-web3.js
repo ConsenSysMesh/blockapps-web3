@@ -938,6 +938,37 @@ var factory = function factory(ObjectEntries, HookedWeb3Provider, BlockAppsVm, X
 
   ;
 
+  function fromDecimal(value) {
+    var number = toBigNumber(value);
+    var result = number.toString(16);
+
+    return number.lessThan(0) ? '-0x' + result.substr(1) : '0x' + result;
+  };
+
+  function toDecimal(value) {
+    return toBigNumber(value).toNumber();
+  };
+
+  function toBigNumber(number) {
+    /*jshint maxcomplexity:5 */
+    number = number || 0;
+    if (isBigNumber(number)) return number;
+
+    if (isString(number) && (number.indexOf('0x') === 0 || number.indexOf('-0x') === 0)) {
+      return new BigNumber(number.replace('0x', ''), 16);
+    }
+
+    return new BigNumber(number.toString(10), 10);
+  };
+
+  function isBigNumber(object) {
+    return object instanceof BigNumber || object && object.constructor && object.constructor.name === 'BigNumber';
+  };
+
+  function isString(object) {
+    return typeof object === 'string' || object && object.constructor && object.constructor.name === 'String';
+  };
+
   return BlockAppsWeb3Provider;
 };
 
@@ -949,34 +980,3 @@ if (typeof module !== 'undefined') {
 } else {
   window.BlockAppsWeb3Provider = factory(window.ObjectEntries, window.HookedWeb3Provider, window.BlockAppsVm, window.XMLHttpRequest, window.BigNumber, window.EthTx, window.Buffer, window.ethUtil);
 }
-
-function fromDecimal(value) {
-  var number = toBigNumber(value);
-  var result = number.toString(16);
-
-  return number.lessThan(0) ? '-0x' + result.substr(1) : '0x' + result;
-};
-
-function toDecimal(value) {
-  return toBigNumber(value).toNumber();
-};
-
-function toBigNumber(number) {
-  /*jshint maxcomplexity:5 */
-  number = number || 0;
-  if (isBigNumber(number)) return number;
-
-  if (isString(number) && (number.indexOf('0x') === 0 || number.indexOf('-0x') === 0)) {
-    return new BigNumber(number.replace('0x', ''), 16);
-  }
-
-  return new BigNumber(number.toString(10), 10);
-};
-
-function isBigNumber(object) {
-  return object instanceof BigNumber || object && object.constructor && object.constructor.name === 'BigNumber';
-};
-
-function isString(object) {
-  return typeof object === 'string' || object && object.constructor && object.constructor.name === 'String';
-};
